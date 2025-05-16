@@ -18,6 +18,32 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# Function to extract message from LangFlow response
+def extract_message_from_response(response_data):
+    try:
+        # Path 1: Try to get message from the nested structure based on the example
+        if "outputs" in response_data and len(response_data["outputs"]) > 0:
+            first_output = response_data["outputs"][0]
+            if "outputs" in first_output and len(first_output["outputs"]) > 0:
+                inner_output = first_output["outputs"][0]
+                
+                # Path 1a: Try to get from messages array
+                if "messages" in inner_output and len(inner_output["messages"]) > 0:
+                    return inner_output["messages"][0]["message"]
+                
+                # Path 1b: Try to get from results.message.text
+                if "results" in inner_output and "message" in inner_output["results"]:
+                    message_obj = inner_output["results"]["message"]
+                    if "text" in message_obj:
+                        return message_obj["text"]
+                    elif "data" in message_obj and "text" in message_obj["data"]:
+                        return message_obj["data"]["text"]
+        
+        # Fallback to string representation if we can't find the message
+        return json.dumps(response_data, indent=2)
+    except Exception as e:
+        return f"Error extracting message: {str(e)}\nRaw response: {str(response_data)}"
+
 # Function to call LangFlow API
 def query_langflow(user_input):
     payload = {
@@ -44,52 +70,4 @@ def query_langflow(user_input):
 # Chat input
 if prompt := st.chat_input("What would you like to ask?"):
     # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    
-    # Display user message
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    
-    # Display assistant response with a spinner while processing
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            response_data = query_langflow(prompt)
-            
-            if "error" in response_data:
-                response_text = f"Sorry, I encountered an error: {response_data['error']}"
-            else:
-                # Extract the assistant's message from the response
-                # Adjust this based on the actual structure of your LangFlow API response
-                try:
-                    # This assumes the response contains a field like 'response', 'answer', or 'text'
-                    # You may need to modify this based on the actual structure
-                    if isinstance(response_data, dict):
-                        if "response" in response_data:
-                            response_text = response_data["response"]
-                        elif "answer" in response_data:
-                            response_text = response_data["answer"]
-                        elif "text" in response_data:
-                            response_text = response_data["text"]
-                        elif "output" in response_data:
-                            response_text = response_data["output"]
-                        else:
-                            # Fallback: display the full response as text
-                            response_text = json.dumps(response_data, indent=2)
-                    elif isinstance(response_data, str):
-                        response_text = response_data
-                    else:
-                        response_text = str(response_data)
-                except Exception as e:
-                    response_text = f"Error formatting response: {str(e)}\nRaw response: {str(response_data)}"
-            
-            st.markdown(response_text)
-            
-            # Add assistant response to chat history
-            st.session_state.messages.append({"role": "assistant", "content": response_text})
-
-# Add some helpful information at the bottom
-st.sidebar.title("About")
-st.sidebar.info(
-    "This is a chat interface for Furze AI. "
-    "Enter your questions or prompts in the chat input below."
-)
+    st.session_state.messages.a
