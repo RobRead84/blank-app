@@ -4,7 +4,7 @@ import json
 
 # Set page config and title
 st.set_page_config(page_title="LangFlow Chat", page_icon="🤖")
-st.title("🤖 LangFlow Chat Interface")
+st.title("🤖 Furze")
 
 # Initialize chat history in session state if it doesn't exist
 if "messages" not in st.session_state:
