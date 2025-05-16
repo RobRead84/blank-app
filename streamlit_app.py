@@ -3,8 +3,8 @@ import requests
 import json
 
 # Set page config and title
-st.set_page_config(page_title="LangFlow Chat", page_icon="🤖")
-st.title("🤖 Furze")
+st.set_page_config(page_title="Furze AI", page_icon="🤖")
+st.title("🤖 Furze AI")
 
 # Initialize chat history in session state if it doesn't exist
 if "messages" not in st.session_state:
@@ -90,6 +90,6 @@ if prompt := st.chat_input("What would you like to ask?"):
 # Add some helpful information at the bottom
 st.sidebar.title("About")
 st.sidebar.info(
-    "This is a chat interface for your LangFlow model. "
+    "This is a chat interface for Furze AI. "
     "Enter your questions or prompts in the chat input below."
 )
