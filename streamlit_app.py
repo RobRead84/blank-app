@@ -20,7 +20,7 @@ API_ENDPOINTS = {
     "Furze AI": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/c1dc8c3e-aa3e-483c-889a-c6b4e689c8dd",
     "Eco System Identification": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/c1dc8c3e-aa3e-483c-889a-c6b4e689c8dd", # Replace with actual endpoint
     "Eco System + SWOT": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/c1dc8c3e-aa3e-483c-889a-c6b4e689c8dd", # Replace with actual endpoint
-    "Eco System + SWOT + Scenarios": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/bc6c6e43-e0d2-47c2-8cc0-82c7a606afa2" # Replace with actual endpoint
+    "Eco System + SWOT + Scenarios": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/c1dc8c3e-aa3e-483c-889a-c6b4e689c8dd" # Replace with actual endpoint
 }
 
 # Document upload endpoints
