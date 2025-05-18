@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import json
+import time
 
 # Set page config and title
 st.set_page_config(page_title="Furze from Firehills", page_icon="🌿")
@@ -80,12 +81,28 @@ def query_langflow(user_input, endpoint):
     }
     
     try:
-        response = requests.post(endpoint, json=payload, headers=headers)
+        # Set a longer timeout for Eco system processes (15 minutes)
+        timeout = 900 if "SWOT" in st.session_state["page"] else 120
+        
+        # Show a message for long-running processes
+        if "SWOT" in st.session_state["page"]:
+            st.info(f"This process can take up to 10 minutes to complete. Please be patient.")
+        
+        # Make the API request with extended timeout
+        response = requests.post(endpoint, json=payload, headers=headers, timeout=timeout)
         response.raise_for_status()
         return response.json()
+    
+    except requests.exceptions.Timeout:
+        st.warning("The process is taking longer than expected. The system will continue processing in the background.")
+        # For timeout cases, we could implement a polling mechanism
+        # For now, we'll return a user-friendly message
+        return {"error": "The process is taking longer than expected. Please check back in a few minutes or try a simpler query."}
+    
     except requests.exceptions.RequestException as e:
         st.error(f"API Request Error: {e}")
         return {"error": str(e)}
+    
     except ValueError as e:
         st.error(f"Response Parsing Error: {e}")
         return {"error": str(e)}
@@ -136,8 +153,18 @@ elif st.session_state["page"] == "Furze AI":
         # Display assistant response with a spinner while processing
         with st.chat_message("assistant"):
             message_placeholder = st.empty()
-            with st.spinner("Thinking..."):
+            progress_placeholder = st.empty()
+            
+            with st.spinner("Processing your request..."):
+                # For SWOT-related pages, show a progress indicator
+                if "SWOT" in current_page:
+                    progress_placeholder.info("This may take up to 10 minutes for complex analyses. The system is working...")
+                
+                # Make the API call with extended timeout
                 response_data = query_langflow(prompt, endpoint)
+                
+                # Clear the progress message
+                progress_placeholder.empty()
                 
                 if "error" in response_data:
                     response_text = f"Sorry, I encountered an error: {response_data['error']}"
@@ -202,6 +229,9 @@ elif st.session_state["page"] == "Eco System + SWOT":
     data has been uploaded in advance to get the best results.**
     """)
     
+    # Show processing time warning
+    st.warning("⚠️ This analysis can take up to 10 minutes to complete due to its complexity. Please be patient after submitting your query.")
+    
     # Chat functionality
     current_page = st.session_state["page"]
     endpoint = API_ENDPOINTS[current_page]
@@ -245,6 +275,9 @@ elif st.session_state["page"] == "Eco System + SWOT + Scenarios":
     data has been uploaded in advance to get the best results.**
     """)
     
+    # Show processing time warning
+    st.warning("⚠️ This comprehensive analysis can take up to 10 minutes to complete. Please be patient after submitting your query.")
+    
     # Chat functionality
     current_page = st.session_state["page"]
     endpoint = API_ENDPOINTS[current_page]
@@ -286,4 +319,4 @@ with st.expander("Debug Information (Expand to see)"):
     st.write("Session State Keys:", list(st.session_state.keys()))
     st.write("Messages Per Page:", {page: len(messages) for page, messages in st.session_state["messages"].items()})
     if st.session_state["page"] in API_ENDPOINTS:
-        st.write("Current API Endpoint:", API_ENDPOINTS[st.session_state["page"]])
+        st.write("Current API Endpoint:", API_ENDPOINTS[st.sess
