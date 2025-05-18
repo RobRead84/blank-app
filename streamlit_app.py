@@ -314,7 +314,7 @@ elif st.session_state["page"] in ["Furze AI", "Eco System Identification", "Eco 
             
             # Auto-refresh the page to check progress
             time.sleep(1)  # Small delay to prevent too rapid refreshes
-            st.experimental_rerun()
+            st.rerun()  # Using st.rerun() instead of st.experimental_rerun()
     
     # Check for any completed jobs for this page
     completed_jobs = [job_id for job_id, job in st.session_state["background_jobs"].items() 
@@ -332,7 +332,7 @@ elif st.session_state["page"] in ["Furze AI", "Eco System Identification", "Eco 
         del st.session_state["background_jobs"][job_id]
         
         # Rerun to update the UI
-        st.experimental_rerun()
+        st.rerun()  # Using st.rerun() instead of st.experimental_rerun()
     
     # Check for any error jobs for this page
     error_jobs = [job_id for job_id, job in st.session_state["background_jobs"].items() 
@@ -351,7 +351,7 @@ elif st.session_state["page"] in ["Furze AI", "Eco System Identification", "Eco 
         del st.session_state["background_jobs"][job_id]
         
         # Rerun to update the UI
-        st.experimental_rerun()
+        st.rerun()  # Using st.rerun() instead of st.experimental_rerun()
     
     # Chat input
     if prompt := st.chat_input("What would you like to ask?"):
@@ -371,7 +371,7 @@ elif st.session_state["page"] in ["Furze AI", "Eco System Identification", "Eco 
             st.progress(0.05)
         
         # Rerun to start the progress updates
-        st.experimental_rerun()
+        st.rerun()  # Using st.rerun() instead of st.experimental_rerun()
 
 # Add debug section to help troubleshoot
 with st.expander("Debug Information (Expand to see)"):
