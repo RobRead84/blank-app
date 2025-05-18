@@ -1,8 +1,6 @@
 import streamlit as st
 import requests
 import json
-import base64
-from io import BytesIO
 
 # Set page config and title
 st.set_page_config(page_title="Furze from Firehills", page_icon="🌿")
@@ -28,18 +26,10 @@ API_ENDPOINTS = {
 # Document upload endpoints
 VECTOR_STORE_API = "https://your-vector-store-api-endpoint.com" # Replace with actual endpoint
 
-# Function to get base64 encoded image
-def get_furze_image():
-    # Using a placeholder furze image URL
-    response = requests.get("https://www.irishtimes.com/resizer/eZ0qeT3pBX2ZA42LkflAXl18tXc=/1600x0/filters:format(jpg):quality(70)/cloudfront-eu-central-1.images.arcpublishing.com/irishtimes/BBQE6Q5IXJQJNXGN5NXPOGRZOA.jpg")
-    img = BytesIO(response.content)
-    encoded = base64.b64encode(img.getvalue()).decode()
-    return f"data:image/jpeg;base64,{encoded}"
-
 # Sidebar for navigation
 with st.sidebar:
-    # Add Furze image as icon
-    st.image(get_furze_image(), width=100)
+    # Use a simple icon for Furze
+    st.markdown("# 🌿 Furze")
     
     # Navigation
     st.title("Navigation")
