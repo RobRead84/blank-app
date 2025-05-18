@@ -18,13 +18,10 @@ if "messages" not in st.session_state:
 # API endpoints for different chat modules
 API_ENDPOINTS = {
     "Furze AI": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/c1dc8c3e-aa3e-483c-889a-c6b4e689c8dd",
-    "Eco System Identification": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/c1dc8c3e-aa3e-483c-889a-c6b4e689c8dd", # Replace with actual endpoint
-    "Eco System + SWOT": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/c1dc8c3e-aa3e-483c-889a-c6b4e689c8dd", # Replace with actual endpoint
-    "Eco System + SWOT + Scenarios": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/c1dc8c3e-aa3e-483c-889a-c6b4e689c8dd" # Replace with actual endpoint
+    "Eco System Identification": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/3d9f75a3-78fd-4614-b950-fa62a036bedb",
+    "Eco System + SWOT": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/243de91a-eeb9-4bec-85b6-2d6f0aa2a673",
+    "Eco System + SWOT + Scenarios": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/bc6c6e43-e0d2-47c2-8cc0-82c7a606afa2"
 }
-
-# Document upload endpoints
-VECTOR_STORE_API = "https://your-vector-store-api-endpoint.com" # Replace with actual endpoint
 
 # Sidebar for navigation
 with st.sidebar:
@@ -36,23 +33,6 @@ with st.sidebar:
     for page in ["Home", "Furze AI", "Eco System Identification", "Eco System + SWOT", "Eco System + SWOT + Scenarios"]:
         if st.button(page, key=f"nav_{page}"):
             st.session_state["page"] = page
-    
-    # Upload section
-    st.title("Upload Documents")
-    uploaded_file = st.file_uploader("Upload documents for vector store", type=["pdf", "txt", "docx"])
-    
-    if uploaded_file is not None:
-        with st.spinner("Uploading document to vector store..."):
-            # Save the uploaded file to vector store
-            try:
-                files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
-                response = requests.post(f"{VECTOR_STORE_API}/upload", files=files)
-                if response.status_code == 200:
-                    st.success("Document uploaded successfully!")
-                else:
-                    st.error(f"Failed to upload document: {response.text}")
-            except Exception as e:
-                st.error(f"Error uploading document: {str(e)}")
     
     # About section
     st.title("About")
