@@ -18,10 +18,10 @@ if "messages" not in st.session_state:
 
 # Updated API endpoints for different chat modules based on the provided code
 API_ENDPOINTS = {
-    "Furze AI": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/955fa9ff-6d55-4e7a-9eeb-ec15ef656fab",
-    "Eco System Identification": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/c8744f17-0887-4980-a5a2-ceca69ce552d",
-    "Eco System + SWOT": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/82dbd031-ae3b-46fb-b6d0-82fec50ac844",
-    "Eco System + SWOT + Scenarios": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/b362ee31-f35a-4f72-8751-7c38dad04625"
+    "Furze AI": "https://web-server-5a231649.fctl.app/api/v1/run/955fa9ff-6d55-4e7a-9eeb-ec15ef656fab",
+    "Eco System Identification": "https://web-server-5a231649.fctl.app/api/v1/run/c8744f17-0887-4980-a5a2-ceca69ce552d",
+    "Eco System + SWOT": "https://web-server-5a231649.fctl.app/api/v1/run/82dbd031-ae3b-46fb-b6d0-82fec50ac844",
+    "Eco System + SWOT + Scenarios": "https://web-server-5a231649.fctl.app/api/v1/run/b362ee31-f35a-4f72-8751-7c38dad04625"
 }
 
 # Sidebar for navigation
