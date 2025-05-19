@@ -19,7 +19,7 @@ if "messages" not in st.session_state:
 API_ENDPOINTS = {
     "Furze AI": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/c1dc8c3e-aa3e-483c-889a-c6b4e689c8dd",
     "Eco System Identification": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/3d9f75a3-78fd-4614-b950-fa62a036bedb",
-    "Eco System + SWOT": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/243de91a-eeb9-4bec-85b6-2d6f0aa2a673",
+    "Eco System + SWOT": "ttps://d186xcf3hom0xy.cloudfront.net/api/v1/run/82dbd031-ae3b-46fb-b6d0-82fec50ac844",
     "Eco System + SWOT + Scenarios": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/bc6c6e43-e0d2-47c2-8cc0-82c7a606afa2"
 }
 
