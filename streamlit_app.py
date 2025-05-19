@@ -16,13 +16,19 @@ if "messages" not in st.session_state:
     for page in ["Furze AI", "Eco System Identification", "Eco System + SWOT", "Eco System + SWOT + Scenarios"]:
         st.session_state["messages"][page] = []
 
-# Updated API endpoints for different chat modules based on the provided code
+# Updated API endpoints for different chat modules with increased timeout parameters
+# Using the web-server urls instead of CloudFront URLs
 API_ENDPOINTS = {
     "Furze AI": "https://web-server-5a231649.fctl.app/api/v1/run/955fa9ff-6d55-4e7a-9eeb-ec15ef656fab",
     "Eco System Identification": "https://web-server-5a231649.fctl.app/api/v1/run/c8744f17-0887-4980-a5a2-ceca69ce552d",
     "Eco System + SWOT": "https://web-server-5a231649.fctl.app/api/v1/run/82dbd031-ae3b-46fb-b6d0-82fec50ac844",
     "Eco System + SWOT + Scenarios": "https://web-server-5a231649.fctl.app/api/v1/run/b362ee31-f35a-4f72-8751-7c38dad04625"
 }
+
+# Request timeout settings (in seconds)
+# Increase these values to prevent timeouts with long-running API calls
+CONNECT_TIMEOUT = 10.0  # Connection timeout
+READ_TIMEOUT = 300.0    # Read timeout - increased to 5 minutes
 
 # Sidebar for navigation
 with st.sidebar:
@@ -77,46 +83,102 @@ def query_langflow_streaming(user_input, endpoint, message_placeholder):
     }
     
     headers = {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        # Adding additional headers to ensure direct connection and prevent redirects
+        "Host": "web-server-5a231649.fctl.app",
+        "Connection": "keep-alive"
     }
     
     try:
-        # Make the request
-        with requests.post(endpoint, json=payload, headers=headers, stream=True) as response:
-            response.raise_for_status()
-            
-            # Since we might not have actual streaming from the API,
-            # we'll get the full response and then simulate streaming
-            full_response = response.json()
-            
-            if "error" in full_response:
-                message_placeholder.markdown(f"Sorry, I encountered an error: {full_response['error']}")
-                return full_response
-            
-            # Extract the message
-            response_text = extract_message_from_response(full_response)
-            
-            # Simulate streaming by displaying the response word by word
-            # This gives a better user experience while we wait for the response
-            words = response_text.split()
-            displayed_text = ""
-            
-            for i, word in enumerate(words):
-                displayed_text += word + " "
-                # Update every few words to give a streaming effect
-                if i % 3 == 0 or i == len(words) - 1:
-                    message_placeholder.markdown(displayed_text)
-                    time.sleep(0.05)  # Small delay to simulate typing
-            
+        # Add progress indicator for user awareness
+        progress_bar = st.progress(0)
+        message_placeholder.markdown("Initializing request...")
+        
+        # Make the request with explicit timeouts to prevent 504 errors
+        # First update to show request is being made
+        message_placeholder.markdown("Sending request to API... This may take a minute or two for complex queries.")
+        progress_bar.progress(10)
+        
+        # Make the actual request with extended timeouts
+        response = requests.post(
+            endpoint, 
+            json=payload, 
+            headers=headers, 
+            timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),  # (connect timeout, read timeout)
+            allow_redirects=False  # Try to prevent redirects to CloudFront
+        )
+        
+        progress_bar.progress(50)
+        message_placeholder.markdown("Processing response...")
+        
+        # Check for redirect - if redirected, we'll use the direct URL we want
+        if response.status_code in (301, 302, 303, 307, 308):
+            message_placeholder.markdown("Redirect detected. Trying direct connection...")
+            # Get the real URL from our mapping - use the original endpoint
+            response = requests.post(
+                endpoint, 
+                json=payload, 
+                headers=headers, 
+                timeout=(CONNECT_TIMEOUT, READ_TIMEOUT)
+            )
+        
+        response.raise_for_status()
+        progress_bar.progress(75)
+        
+        # Since we might not have actual streaming from the API,
+        # we'll get the full response and then simulate streaming
+        full_response = response.json()
+        
+        if "error" in full_response:
+            message_placeholder.markdown(f"Sorry, I encountered an error: {full_response['error']}")
+            progress_bar.progress(100)
             return full_response
+        
+        # Extract the message
+        response_text = extract_message_from_response(full_response)
+        progress_bar.progress(90)
+        
+        # Simulate streaming by displaying the response word by word
+        # This gives a better user experience while we wait for the response
+        words = response_text.split()
+        displayed_text = ""
+        
+        for i, word in enumerate(words):
+            displayed_text += word + " "
+            # Update every few words to give a streaming effect
+            if i % 3 == 0 or i == len(words) - 1:
+                message_placeholder.markdown(displayed_text)
+                time.sleep(0.05)  # Small delay to simulate typing
+        
+        progress_bar.progress(100)
+        # Remove the progress bar after completion
+        progress_bar.empty()
+        
+        return full_response
             
+    except requests.exceptions.Timeout as e:
+        error_message = f"API Request Timeout: The server is taking too long to respond. This might be due to a complex query or server load. Details: {e}"
+        message_placeholder.markdown(error_message)
+        if 'progress_bar' in locals():
+            progress_bar.empty()
+        return {"error": str(e)}
     except requests.exceptions.RequestException as e:
         error_message = f"API Request Error: {e}"
         message_placeholder.markdown(error_message)
+        if 'progress_bar' in locals():
+            progress_bar.empty()
         return {"error": str(e)}
     except ValueError as e:
         error_message = f"Response Parsing Error: {e}"
         message_placeholder.markdown(error_message)
+        if 'progress_bar' in locals():
+            progress_bar.empty()
+        return {"error": str(e)}
+    except Exception as e:
+        error_message = f"Unexpected Error: {e}"
+        message_placeholder.markdown(error_message)
+        if 'progress_bar' in locals():
+            progress_bar.empty()
         return {"error": str(e)}
 
 # Content for each page
@@ -170,6 +232,9 @@ else:  # For all chat pages, use the same template with different endpoints
             data has been uploaded in advance to get the best results.**
             """)
         
+        # Add information about potential processing time
+        st.info("Note: Complex queries may take several minutes to process. Please be patient while the AI generates a response.")
+        
         # Get the appropriate endpoint
         endpoint = API_ENDPOINTS[current_page]
         
@@ -215,3 +280,24 @@ with st.expander("Debug Information (Expand to see)"):
     st.write("Messages Per Page:", {page: len(messages) for page, messages in st.session_state["messages"].items()})
     if st.session_state["page"] in API_ENDPOINTS:
         st.write("Current API Endpoint:", API_ENDPOINTS[st.session_state["page"]])
+        st.write("Connect Timeout:", CONNECT_TIMEOUT)
+        st.write("Read Timeout:", READ_TIMEOUT)
+    
+    # Add network troubleshooting button
+    if st.button("Test API Connection"):
+        endpoint = API_ENDPOINTS.get(st.session_state["page"], API_ENDPOINTS["Furze AI"])
+        st.write(f"Testing connection to: {endpoint}")
+        try:
+            test_response = requests.get(
+                endpoint.split("/api")[0], 
+                timeout=5,
+                allow_redirects=True
+            )
+            st.write(f"Status Code: {test_response.status_code}")
+            st.write(f"Response URL: {test_response.url}")
+            if test_response.url != endpoint.split("/api")[0]:
+                st.warning(f"Redirect detected! Original URL redirected to {test_response.url}")
+            else:
+                st.success("No redirects detected.")
+        except Exception as e:
+            st.error(f"Connection test failed: {str(e)}")
