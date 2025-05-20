@@ -185,7 +185,7 @@ def query_langflow_streaming(user_input, endpoint, message_placeholder):
 if st.session_state["page"] == "Home":
     st.title("Furze from Firehills")
     st.write("""
-    Growth and performance for organisations can no longer be driven out of classic approaches taken by executives. Simply doing more of what they are good at doesn't create top and bottom line impacts. The best organisations in the world form bridges with other parties in mutually beneficial ways. Which create ratcheting growth effects which competing organisations cannot easily create. 
+    Growth and performance can no longer be driven out of classic approaches taken by executives. Simply doing more of what they are good at doesn't create top and bottom line impacts. The best organisations in the world form bridges with other parties in mutually beneficial ways. Which create ratcheting growth effects which competing organisations cannot easily create. 
     """)
     
     st.write("""
