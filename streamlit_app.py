@@ -31,8 +31,12 @@ READ_TIMEOUT = 300.0    # Read timeout - increased to 5 minutes
 
 # Sidebar for navigation
 with st.sidebar:
-    # Use a simple icon for Furze
-    st.markdown("# 🌿 Furze")
+    # Display branded logo
+    try:
+        st.image("https://github.com/RobRead84/blank-app/blob/main/Firehills-logo-h-dark-yellowdoctor.png?raw=true", width=250)
+    except:
+        # Fallback to text if logo fails to load
+        st.markdown("# 🌿 Furze")
     
     # Navigation
     st.title("Navigation")
@@ -131,7 +135,7 @@ def query_langflow_api(user_input, endpoint):
 if st.session_state["page"] == "Home":
     st.title("Furze from Firehills")
     st.write("""
-    Growth and performance can no longer be driven out of classic approaches taken by executives. Simply doing more of what they are good at doesn't create top and bottom line impacts. The best organisations in the world form bridges with other parties in mutually beneficial ways. Which create ratcheting growth effects, that competing organisations cannot easily create. 
+    Growth and performance can no longer be driven out of classic approaches taken by executives. Simply doing more of what they are good at doesn't create top and bottom line impacts. The best organisations in the world form bridges with other parties in mutually beneficial ways. Which create ratcheting growth effects which competing organisations cannot easily create. 
     """)
     
     st.write("""
