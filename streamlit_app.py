@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 import json
-import time
 
 # Set page config and title
 st.set_page_config(page_title="Furze from Firehills", page_icon="🌿")
@@ -74,8 +73,8 @@ def extract_message_from_response(response_data):
     except Exception as e:
         return f"Error extracting message: {str(e)}\nRaw response: {str(response_data)[:200]}..."
 
-# Function to stream response from LangFlow API (using simulated streaming since the API might not support real streaming)
-def query_langflow_streaming(user_input, endpoint, message_placeholder):
+# Function to query LangFlow API and return full response
+def query_langflow_api(user_input, endpoint):
     payload = {
         "input_value": user_input,
         "output_type": "chat",
@@ -90,16 +89,7 @@ def query_langflow_streaming(user_input, endpoint, message_placeholder):
     }
     
     try:
-        # Add progress indicator for user awareness
-        progress_bar = st.progress(0)
-        message_placeholder.markdown("Initializing request...")
-        
         # Make the request with explicit timeouts to prevent 504 errors
-        # First update to show request is being made
-        message_placeholder.markdown("Sending request to API... This may take a minute or two for complex queries.")
-        progress_bar.progress(10)
-        
-        # Make the actual request with extended timeouts
         response = requests.post(
             endpoint, 
             json=payload, 
@@ -108,12 +98,8 @@ def query_langflow_streaming(user_input, endpoint, message_placeholder):
             allow_redirects=False  # Try to prevent redirects to CloudFront
         )
         
-        progress_bar.progress(50)
-        message_placeholder.markdown("Processing response...")
-        
         # Check for redirect - if redirected, we'll use the direct URL we want
         if response.status_code in (301, 302, 303, 307, 308):
-            message_placeholder.markdown("Redirect detected. Trying direct connection...")
             # Get the real URL from our mapping - use the original endpoint
             response = requests.post(
                 endpoint, 
@@ -123,69 +109,29 @@ def query_langflow_streaming(user_input, endpoint, message_placeholder):
             )
         
         response.raise_for_status()
-        progress_bar.progress(75)
         
-        # Since we might not have actual streaming from the API,
-        # we'll get the full response and then simulate streaming
+        # Get the full response
         full_response = response.json()
         
         if "error" in full_response:
-            message_placeholder.markdown(f"Sorry, I encountered an error: {full_response['error']}")
-            progress_bar.progress(100)
-            return full_response
-        
-        # Extract the message
-        response_text = extract_message_from_response(full_response)
-        progress_bar.progress(90)
-        
-        # Simulate streaming by displaying the response word by word
-        # This gives a better user experience while we wait for the response
-        words = response_text.split()
-        displayed_text = ""
-        
-        for i, word in enumerate(words):
-            displayed_text += word + " "
-            # Update every few words to give a streaming effect
-            if i % 3 == 0 or i == len(words) - 1:
-                message_placeholder.markdown(displayed_text)
-                time.sleep(0.05)  # Small delay to simulate typing
-        
-        progress_bar.progress(100)
-        # Remove the progress bar after completion
-        progress_bar.empty()
+            return {"error": full_response["error"]}
         
         return full_response
             
     except requests.exceptions.Timeout as e:
-        error_message = f"API Request Timeout: The server is taking too long to respond. This might be due to a complex query or server load. Details: {e}"
-        message_placeholder.markdown(error_message)
-        if 'progress_bar' in locals():
-            progress_bar.empty()
-        return {"error": str(e)}
+        return {"error": f"API Request Timeout: The server is taking too long to respond. This might be due to a complex query or server load. Details: {e}"}
     except requests.exceptions.RequestException as e:
-        error_message = f"API Request Error: {e}"
-        message_placeholder.markdown(error_message)
-        if 'progress_bar' in locals():
-            progress_bar.empty()
-        return {"error": str(e)}
+        return {"error": f"API Request Error: {e}"}
     except ValueError as e:
-        error_message = f"Response Parsing Error: {e}"
-        message_placeholder.markdown(error_message)
-        if 'progress_bar' in locals():
-            progress_bar.empty()
-        return {"error": str(e)}
+        return {"error": f"Response Parsing Error: {e}"}
     except Exception as e:
-        error_message = f"Unexpected Error: {e}"
-        message_placeholder.markdown(error_message)
-        if 'progress_bar' in locals():
-            progress_bar.empty()
-        return {"error": str(e)}
+        return {"error": f"Unexpected Error: {e}"}
 
 # Content for each page
 if st.session_state["page"] == "Home":
     st.title("Furze from Firehills")
     st.write("""
-    Growth and performance can no longer be driven out of classic approaches taken by executives. Simply doing more of what they are good at doesn't create top and bottom line impacts. The best organisations in the world form bridges with other parties in mutually beneficial ways. Which create ratcheting growth effects which competing organisations cannot easily create. 
+    Growth and performance can no longer be driven out of classic approaches taken by executives. Simply doing more of what they are good at doesn't create top and bottom line impacts. The best organisations in the world form bridges with other parties in mutually beneficial ways. Which create ratcheting growth effects, that competing organisations cannot easily create. 
     """)
     
     st.write("""
@@ -231,9 +177,6 @@ else:  # For all chat pages, use the same template with different endpoints
             data has been uploaded in advance to get the best results.**
             """)
         
-        # Add information about potential processing time
-        st.info("Note: Complex queries may take several minutes to process. Please be patient while the AI generates a response.")
-        
         # Get the appropriate endpoint
         endpoint = API_ENDPOINTS[current_page]
         
@@ -251,13 +194,11 @@ else:  # For all chat pages, use the same template with different endpoints
             with st.chat_message("user"):
                 st.markdown(prompt)
             
-            # Display assistant response with a spinner while processing
+            # Display assistant response
             with st.chat_message("assistant"):
-                message_placeholder = st.empty()
-                
-                # Use the streaming function instead
+                # Use spinner while waiting for the response
                 with st.spinner("Thinking..."):
-                    response_data = query_langflow_streaming(prompt, endpoint, message_placeholder)
+                    response_data = query_langflow_api(prompt, endpoint)
                     
                     if "error" in response_data:
                         response_text = f"Sorry, I encountered an error: {response_data['error']}"
@@ -265,9 +206,8 @@ else:  # For all chat pages, use the same template with different endpoints
                         # Extract the message using our function
                         response_text = extract_message_from_response(response_data)
                     
-                    # The message has already been displayed by the streaming function,
-                    # but we'll make sure it's the complete message
-                    message_placeholder.markdown(response_text)
+                    # Display the complete response at once
+                    st.markdown(response_text)
                     
                     # Add assistant response to chat history
                     st.session_state["messages"][current_page].append({"role": "assistant", "content": response_text})
