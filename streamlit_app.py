@@ -15,7 +15,7 @@ if "messages" not in st.session_state:
     for page in ["Furze AI", "Eco System Identification", "Eco System + SWOT", "Eco System + SWOT + Scenarios"]:
         st.session_state["messages"][page] = []
 
-# Updated API endpoints for different chat modules with increased timeout parameters
+# Updated API endpoints for different chat modules with increased timeout parameters.
 # Using the web-server urls instead of CloudFront URLs
 API_ENDPOINTS = {
     "Furze AI": "https://web-server-5a231649.fctl.app/api/v1/run/55de672f-c877-4541-8890-2554b2e810a8",
