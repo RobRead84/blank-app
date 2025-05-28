@@ -50,19 +50,8 @@ def display_message_with_tables(content):
             st.write("First 200 chars:")
             st.code(content[:200])
     
-    # Method 1: Try unsafe_allow_html first (should work with Streamlit 1.45.1)
-    try:
-        if "|" in content:
-            # Check for various table separator patterns
-            has_separator = any(pattern in content for pattern in ["---", "--|", "-|-", "|-|"])
-            if has_separator:
-                st.markdown(content, unsafe_allow_html=True)
-                return
-    except Exception as e:
-        if st.session_state.get("debug_mode", False):
-            st.write(f"HTML rendering failed: {e}")  # Debug info
-    
-    # Method 2: Force manual parsing for any content with pipes
+    # Skip unsafe_allow_html approach - it doesn't parse markdown tables
+    # Go straight to manual parsing for any content with pipes
     if "|" in content:
         try:
             lines = content.split('\n')
@@ -92,6 +81,8 @@ def display_message_with_tables(content):
                 else:
                     if in_table:
                         # End of table, render it
+                        if st.session_state.get("debug_mode", False):
+                            st.write(f"🔧 Rendering table with {len(table_lines)} lines")
                         render_table_from_lines(table_lines)
                         table_lines = []
                         in_table = False
@@ -101,15 +92,18 @@ def display_message_with_tables(content):
             
             # Handle any remaining content
             if table_lines and in_table:
+                if st.session_state.get("debug_mode", False):
+                    st.write(f"🔧 Rendering final table with {len(table_lines)} lines")
                 render_table_from_lines(table_lines)
             elif current_text:
                 st.markdown('\n'.join(current_text))
             return
         except Exception as e:
             if st.session_state.get("debug_mode", False):
-                st.write(f"Manual parsing failed: {e}")  # Debug info
+                st.write(f"Manual parsing failed: {e}")
+                st.write("Falling back to regular markdown")
     
-    # Method 3: Fallback to regular markdown
+    # Fallback to regular markdown
     st.markdown(content)
 
 def render_table_from_lines(table_lines):
@@ -117,35 +111,77 @@ def render_table_from_lines(table_lines):
     Convert table lines to a proper Streamlit table
     """
     try:
-        if len(table_lines) < 3:  # Need at least header, separator, and one data row
+        if len(table_lines) < 2:  # Need at least header and one data row
             st.markdown('\n'.join(table_lines))
             return
         
-        # Extract header
-        header_line = table_lines[0]
-        headers = [col.strip() for col in header_line.split('|')[1:-1]]  # Remove first and last empty elements
+        # Debug output
+        if st.session_state.get("debug_mode", False):
+            st.write(f"🔧 Processing {len(table_lines)} table lines:")
+            for i, line in enumerate(table_lines):
+                st.write(f"  Line {i}: {repr(line)}")
         
-        # Skip separator line (contains ---)
-        data_lines = [line for line in table_lines[2:] if line and not '---' in line]
+        # Find header line (first non-separator line)
+        header_line = None
+        header_idx = 0
+        for i, line in enumerate(table_lines):
+            if not any(sep in line for sep in ["---", "--|", "-|-", "|-|"]):
+                header_line = line
+                header_idx = i
+                break
+        
+        if not header_line:
+            st.markdown('\n'.join(table_lines))
+            return
+        
+        # Extract headers
+        headers = [col.strip() for col in header_line.split('|')[1:-1]]  # Remove first and last empty elements
+        headers = [h for h in headers if h]  # Remove empty headers
+        
+        if not headers:
+            st.markdown('\n'.join(table_lines))
+            return
+        
+        # Find data lines (skip header and separator lines)
+        data_lines = []
+        for i, line in enumerate(table_lines):
+            if i > header_idx and not any(sep in line for sep in ["---", "--|", "-|-", "|-|"]):
+                data_lines.append(line)
         
         # Extract data rows
         rows = []
         for line in data_lines:
             if '|' in line:
                 row_data = [col.strip() for col in line.split('|')[1:-1]]  # Remove first and last empty elements
-                if len(row_data) == len(headers):
-                    rows.append(row_data)
+                row_data = [cell for cell in row_data if cell or len(row_data) <= len(headers)]  # Keep empty cells if row length matches
+                
+                # Pad or trim row to match header length
+                while len(row_data) < len(headers):
+                    row_data.append("")
+                if len(row_data) > len(headers):
+                    row_data = row_data[:len(headers)]
+                
+                rows.append(row_data)
         
         if rows:
             # Create DataFrame and display
             df = pd.DataFrame(rows, columns=headers)
+            if st.session_state.get("debug_mode", False):
+                st.write(f"🔧 Created DataFrame with shape: {df.shape}")
+                st.write("Headers:", headers)
+                st.write("First row:", rows[0] if rows else "No rows")
+            
             st.dataframe(df, use_container_width=True)
         else:
-            # Fallback to markdown if parsing fails
+            # Fallback to markdown if no data rows found
+            if st.session_state.get("debug_mode", False):
+                st.write("🔧 No data rows found, falling back to markdown")
             st.markdown('\n'.join(table_lines))
             
     except Exception as e:
         # If anything fails, just render as markdown
+        if st.session_state.get("debug_mode", False):
+            st.write(f"🔧 Table rendering error: {e}")
         st.markdown('\n'.join(table_lines))
 
 # Sidebar for navigation
