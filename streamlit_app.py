@@ -173,7 +173,7 @@ def render_table_from_lines(table_lines):
                 st.write("Headers:", headers)
                 st.write("First row:", rows[0] if rows else "No rows")
             
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, use_container_width=True, hide_index=True)
         else:
             # Fallback to markdown if no data rows found
             if st.session_state.get("debug_mode", False):
