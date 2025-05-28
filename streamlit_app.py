@@ -60,126 +60,95 @@ def debug_table_detection(message_text):
         st.write("### Raw table sample:")
         st.code(message_text[start_idx:end_idx])
 
-# Convert markdown table to pandas DataFrame
-def markdown_table_to_df(table_text):
-    # Split the table into rows
-    rows = [row.strip() for row in table_text.split('\n') if row.strip().startswith('|') and row.strip().endswith('|')]
-    
-    if len(rows) < 2:  # Need at least header and separator
-        return None
-    
-    # Extract header cells (first row)
-    header = rows[0]
-    header_cells = [cell.strip() for cell in header.split('|') if cell.strip()]
-    
-    # Skip the separator row (second row)
-    
-    # Process data rows (third row onwards)
-    data = []
-    for row in rows[2:]:
-        cells = [cell.strip() for cell in row.split('|') if cell.strip()]
-        if len(cells) == len(header_cells):  # Ensure row has same number of cells as header
-            data.append(cells)
-    
-    # Create DataFrame
-    df = pd.DataFrame(data, columns=header_cells)
-    return df
-
 # Improved rendering function that preserves all text and formats tables correctly
 def render_message_with_tables(message_text):
+    # Add custom CSS for table styling
+    st.markdown("""
+    <style>
+    .markdown-table-wrapper {
+        overflow-x: auto;
+        margin: 1em 0;
+    }
+    .markdown-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9em;
+        margin-bottom: 20px;
+    }
+    .markdown-table thead tr {
+        background-color: #4CAF50;
+        color: white;
+        text-align: left;
+    }
+    .markdown-table th,
+    .markdown-table td {
+        padding: 12px 15px;
+        border: 1px solid #dddddd;
+    }
+    .markdown-table tbody tr {
+        border-bottom: 1px solid #dddddd;
+        background-color: #f8f8f8;  /* Light uniform background for all rows */
+    }
+    .markdown-table tbody tr:last-of-type {
+        border-bottom: 2px solid #4CAF50;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     # If there are no pipes, it's definitely not a table
     if '|' not in message_text:
         st.markdown(message_text)
         return
     
     try:
-        # Add custom CSS for table styling
-        st.markdown("""
-        <style>
-        .markdown-table-wrapper {
-            overflow-x: auto;
-            margin: 1em 0;
-        }
-        .markdown-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.9em;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
-        }
-        .markdown-table thead tr {
-            background-color: #009879;
-            color: white;
-            text-align: left;
-        }
-        .markdown-table th,
-        .markdown-table td {
-            padding: 12px 15px;
-            border: 1px solid #dddddd;
-        }
-        .markdown-table tbody tr {
-            border-bottom: 1px solid #dddddd;
-        }
-        .markdown-table tbody tr:nth-of-type(even) {
-            background-color: #f3f3f3;
-        }
-        .markdown-table tbody tr:last-of-type {
-            border-bottom: 2px solid #009879;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        # Split the message into parts based on the presence of markdown tables
-        # Look for the pattern of a table: lines starting with | and containing | characters
-        table_pattern = r'(\*\*.*?\*\*\s*\n)?\s*(\|.*?\|.*?\n\|[-:\s|]+\|.*?\n(?:\|.*?\|.*?\n)+)'
-        
-        # Find all tables in the text
-        table_matches = list(re.finditer(table_pattern, message_text, re.DOTALL))
-        
-        if not table_matches:
-            # No tables found, just render the whole message as markdown
-            st.markdown(message_text)
-            return
-        
-        # Process the message with tables
-        last_end = 0
-        
-        for match in table_matches:
-            start, end = match.span()
+        # This function will process a block of text that may contain a table
+        def process_text_block(text_block):
+            # Check if this block contains a table
+            if '|' not in text_block or '\n|' not in text_block:
+                # No table in this block, just render as markdown
+                st.markdown(text_block)
+                return
             
-            # Render any text before this table
-            if start > last_end:
-                st.markdown(message_text[last_end:start])
-            
-            # Get the table section
-            table_section = match.group(0)
-            
-            # Check if there's a title
-            title_match = re.search(r'\*\*(.*?)\*\*', table_section)
-            title = title_match.group(1) if title_match else None
-            
-            if title:
+            # Extract a potential title
+            title_match = re.search(r'^\s*\*\*(.*?)\*\*\s*$', text_block, re.MULTILINE)
+            if title_match:
+                title = title_match.group(1)
+                # Remove the title from the text block to avoid duplication
+                text_block = re.sub(r'^\s*\*\*(.*?)\*\*\s*$', '', text_block, count=1, flags=re.MULTILINE)
                 st.markdown(f"**{title}**")
-                # Remove the title from table_section to avoid duplication
-                table_section = re.sub(r'\*\*.*?\*\*\s*\n', '', table_section, 1)
             
-            # Extract just the table portion
-            table_rows = [row for row in table_section.split('\n') if row.strip().startswith('|') and row.strip().endswith('|')]
+            # Find all table rows (lines starting and ending with |)
+            table_rows = re.findall(r'^\s*\|.*\|\s*$', text_block, re.MULTILINE)
             
-            if len(table_rows) >= 2:  # Need at least header and separator
-                # Convert the markdown table to HTML
+            if len(table_rows) >= 3:  # Need at least header, separator, and one data row
+                # Extract header row
+                header_row = table_rows[0].strip()
+                header_cells = [cell.strip() for cell in header_row.split('|') if cell.strip()]
+                
+                # Check if second row is a separator row (contains only -, :, and |)
+                separator_row = table_rows[1].strip()
+                if not re.match(r'^\|(\s*[-:]+\s*\|)+$', separator_row):
+                    # Not a valid separator row, treat all rows as data
+                    data_rows = table_rows
+                    header_cells = [f"Column {i+1}" for i in range(len(header_cells))]
+                else:
+                    # Valid separator row, use remaining rows as data
+                    data_rows = table_rows[2:]
+                
+                # Create HTML table
                 table_html = '<div class="markdown-table-wrapper"><table class="markdown-table">\n'
                 
-                # Add table header
-                header_cells = [cell.strip() for cell in table_rows[0].split('|') if cell.strip()]
+                # Add header
                 table_html += '<thead>\n<tr>\n'
                 for cell in header_cells:
                     table_html += f'<th>{cell}</th>\n'
                 table_html += '</tr>\n</thead>\n'
                 
-                # Add table body
+                # Add body
                 table_html += '<tbody>\n'
-                for row in table_rows[2:]:  # Skip header and separator rows
-                    cells = [cell.strip() for cell in row.split('|') if cell.strip()]
+                for row in data_rows:
+                    row = row.strip()
+                    cells = [cell.strip() for cell in row.split('|') if cell]
                     if cells:
                         table_html += '<tr>\n'
                         for cell in cells:
@@ -189,22 +158,45 @@ def render_message_with_tables(message_text):
                 
                 table_html += '</table></div>'
                 
-                # Display the HTML table
+                # Display the table
                 st.markdown(table_html, unsafe_allow_html=True)
+                
+                # Remove the table rows from the text block
+                for row in table_rows:
+                    text_block = text_block.replace(row, '')
+                
+                # Render any remaining text after removing the table
+                remaining_text = text_block.strip()
+                if remaining_text:
+                    st.markdown(remaining_text)
             else:
-                # Not enough rows for a valid table, just render as markdown
-                st.markdown(table_section)
-            
-            last_end = end
+                # Not enough rows for a table, render as markdown
+                st.markdown(text_block)
         
-        # Render any text after the last table
-        if last_end < len(message_text):
-            st.markdown(message_text[last_end:])
-            
+        # Split the message by double newlines to get text blocks
+        # This helps identify separate sections that may contain tables
+        text_blocks = re.split(r'\n\s*\n', message_text)
+        
+        # Check if any block contains a table
+        has_table = False
+        for block in text_blocks:
+            if '|' in block and '\n|' in block:
+                has_table = True
+                break
+        
+        if has_table:
+            # Process each text block
+            for block in text_blocks:
+                if block.strip():
+                    process_text_block(block.strip())
+        else:
+            # No tables found, render the whole message as markdown
+            st.markdown(message_text)
+        
     except Exception as e:
         if st.session_state["debug_mode"]:
             st.error(f"Error rendering table: {str(e)}")
-            st.error(f"Table processing failed. Falling back to standard markdown.")
+            st.code(message_text)
         # Fallback to regular markdown rendering
         st.markdown(message_text)
 
