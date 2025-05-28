@@ -40,38 +40,55 @@ def display_message_with_tables(content):
     """
     Display content with proper table rendering - multiple fallback approaches
     """
-    # Method 1: Try unsafe_allow_html first
-    try:
-        if "|" in content and ("---" in content or "--|" in content):
-            st.markdown(content, unsafe_allow_html=True)
-            return
-    except Exception as e:
-        pass
+    # Add debug info in debug mode
+    if st.session_state.get("debug_mode", False):
+        with st.expander("🔍 Table Debug Info", expanded=False):
+            st.write(f"Content length: {len(content)}")
+            st.write(f"Contains pipes: {'|' in content}")
+            has_separator = any(pattern in content for pattern in ["---", "--|", "-|-", "|-|"])
+            st.write(f"Has separator: {has_separator}")
+            st.write("First 200 chars:")
+            st.code(content[:200])
     
-    # Method 2: Manual parsing approach
-    if "|" in content and ("---" in content or "--|" in content):
+    # Method 1: Try unsafe_allow_html first (should work with Streamlit 1.45.1)
+    try:
+        if "|" in content:
+            # Check for various table separator patterns
+            has_separator = any(pattern in content for pattern in ["---", "--|", "-|-", "|-|"])
+            if has_separator:
+                st.markdown(content, unsafe_allow_html=True)
+                return
+    except Exception as e:
+        if st.session_state.get("debug_mode", False):
+            st.write(f"HTML rendering failed: {e}")  # Debug info
+    
+    # Method 2: Force manual parsing for any content with pipes
+    if "|" in content:
         try:
-            # Split content by lines
             lines = content.split('\n')
             current_text = []
             table_lines = []
             in_table = False
             
-            for line in lines:
-                line = line.strip()
+            for i, line in enumerate(lines):
+                line_stripped = line.strip()
                 
-                # Check if this line looks like a table row
-                if line.startswith('|') and line.endswith('|') and line.count('|') >= 3:
+                # More flexible table detection
+                is_table_row = (line_stripped.startswith('|') and 
+                              line_stripped.endswith('|') and 
+                              line_stripped.count('|') >= 3)
+                
+                is_separator = (line_stripped.startswith('|') and 
+                              any(sep in line_stripped for sep in ["---", "--|", "-|-", "|-|"]))
+                
+                if is_table_row or is_separator:
                     if not in_table:
                         # Render any accumulated text first
                         if current_text:
                             st.markdown('\n'.join(current_text))
                             current_text = []
                         in_table = True
-                    table_lines.append(line)
-                elif line.startswith('|') and ('---' in line or '--|' in line):
-                    # This is a table separator line
-                    table_lines.append(line)
+                    table_lines.append(line_stripped)
                 else:
                     if in_table:
                         # End of table, render it
@@ -79,8 +96,8 @@ def display_message_with_tables(content):
                         table_lines = []
                         in_table = False
                     
-                    if line:  # Only add non-empty lines
-                        current_text.append(line)
+                    # Add this line to current text (preserve empty lines for formatting)
+                    current_text.append(line)
             
             # Handle any remaining content
             if table_lines and in_table:
@@ -89,7 +106,8 @@ def display_message_with_tables(content):
                 st.markdown('\n'.join(current_text))
             return
         except Exception as e:
-            pass
+            if st.session_state.get("debug_mode", False):
+                st.write(f"Manual parsing failed: {e}")  # Debug info
     
     # Method 3: Fallback to regular markdown
     st.markdown(content)
@@ -320,15 +338,17 @@ else:  # For all chat pages, use the same template with different endpoints
                     if "error" in response_data:
                         response_text = f"Sorry, I encountered an error: {response_data['error']}"
                         st.markdown(response_text)
+                        # Add error response to chat history
+                        st.session_state["messages"][current_page].append({"role": "assistant", "content": response_text})
                     else:
                         # Extract the message using our function
                         response_text = extract_message_from_response(response_data)
                         
-                        # Use the new table rendering function
+                        # Use the new table rendering function for immediate display
                         display_message_with_tables(response_text)
-                    
-                    # Add assistant response to chat history
-                    st.session_state["messages"][current_page].append({"role": "assistant", "content": response_text})
+                        
+                        # Add assistant response to chat history
+                        st.session_state["messages"][current_page].append({"role": "assistant", "content": response_text})
 
 # Add debug section only if debug mode is enabled
 if st.session_state["debug_mode"]:
@@ -377,6 +397,25 @@ And here's some text after the table."""
             st.code(test_table)
             st.write("**Rendered output:**")
             display_message_with_tables(test_table)
+        
+        # Test with actual API response format
+        if st.button("Test API Format", key="test_api_format"):
+            st.write("**Testing with actual API response format:**")
+            api_test = """Here is a concise summary table for Games Workshop plc (GW):
+
+| Category | Details |
+|----------------------------|---------------------------------------------------------------------------------------------------|
+| **Headquarters** | Nottingham, UK |
+| **Founded** | 1975 |
+| **Business Model** | Design, manufacture, retail of miniature wargames |
+| **Key Products** | Warhammer 40,000, Age of Sigmar, paints, books |
+
+This format should render as a proper table."""
+            
+            st.write("**Raw input:**")
+            st.code(api_test)
+            st.write("**Rendered output:**")
+            display_message_with_tables(api_test)
         
         # Add version and environment info
         st.write("**Environment Information:**")
