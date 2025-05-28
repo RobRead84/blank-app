@@ -59,7 +59,7 @@ with st.sidebar:
     # About section
     st.title("About")
     st.info(
-        "This is the interface for Furze AI. "
+        "This is the interface for Furze from Firehills. "
         "Select a page from the navigation above to get started."
     )
 
@@ -170,27 +170,26 @@ else:  # For all chat pages, use the same template with different endpoints
         # Display appropriate description based on the page
         if current_page == "Furze":
             st.write("""
-            Welcome to Furze. Furze is designed by Firehills as your AI assistant for Eco systems and trained on 
+            Welcome to Furze. Furze is designed by Firehills as your Think Tech assistant for Eco systems, trained on 
             public organisational data and designed for exploring performance and growth. Explore and flourish!
             """)
         elif current_page == "Eco System Identification":
             st.write("""
             Systems thinking needs complex technology to create simple strategies for growth. 
-            This AI agent has been trained on Firehills Eco system IP framework and will explore the roles 
+            Furze has been trained on Firehills Eco system IP framework trained to explore the roles 
             organisation play today. And some they don't. **Ensure that organisational data has been 
             uploaded in advance to get the best results.**
             """)
         elif current_page == "SWOT Generation":
             st.write("""
-            This AI Agent will build your Eco System mapping against roles, but go one step further and 
-            produce a SWOT related to their roles and them as an organisation. **Ensure that organisational 
+            Furze will build out a SWOT analysis based on Eco system roles to support business strategy and modelling. **Ensure that organisational 
             data has been uploaded in advance to get the best results.**
             """)
         elif current_page == "Growth Scenarios":
             st.write("""
-            This AI Agent will build your Eco System mapping against roles, SWOT and also create scenarios for growth. 
-            Scenarios are build out on an organic, in-organic and creative basis. **Ensure that organisational 
-            data has been uploaded in advance to get the best results.**
+            This is where Furze gets interesting. Based on your eco system mapping and SWOT you can now explore current and new growth strategies. 
+            This model will generate 50 growth strategies, evaluate them all and then present the most realistic 5 growth options.
+            **Ensure that organisational data has been uploaded in advance to get the best results.**
             """)
         
         # Get the appropriate endpoint
