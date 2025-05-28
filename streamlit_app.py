@@ -22,6 +22,10 @@ if "messages" not in st.session_state:
     for page in ["Furze", "Eco System Identification", "SWOT Generation", "Growth Scenarios"]:
         st.session_state["messages"][page] = []
 
+# Initialize processing flag to prevent multiple simultaneous requests
+if "processing" not in st.session_state:
+    st.session_state["processing"] = False
+
 # Updated API endpoints for different chat modules with increased timeout parameters.
 # Using the web-server urls instead of CloudFront URLs
 API_ENDPOINTS = {
@@ -200,6 +204,7 @@ with st.sidebar:
     for page in ["Home", "Furze", "Eco System Identification", "SWOT Generation", "Growth Scenarios"]:
         if st.button(page, key=f"nav_{page}"):
             st.session_state["page"] = page
+            st.session_state["processing"] = False  # Reset processing flag when changing pages
     
     # Debug toggle button
     st.title("Settings")
@@ -358,8 +363,12 @@ else:  # For all chat pages, use the same template with different endpoints
                     # Regular markdown for user messages
                     st.markdown(message["content"])
         
-        # Chat input
-        if prompt := st.chat_input("What would you like to ask?"):
+        # Chat input - disable during processing
+        chat_input_disabled = st.session_state.get("processing", False)
+        if prompt := st.chat_input("What would you like to ask?", disabled=chat_input_disabled):
+            # Set processing flag to prevent multiple simultaneous requests
+            st.session_state["processing"] = True
+            
             # Add user message to chat history
             st.session_state["messages"][current_page].append({"role": "user", "content": prompt})
             
@@ -387,6 +396,10 @@ else:  # For all chat pages, use the same template with different endpoints
                         
                         # Add assistant response to chat history
                         st.session_state["messages"][current_page].append({"role": "assistant", "content": response_text})
+            
+            # Reset processing flag and rerun to scroll to top of new response
+            st.session_state["processing"] = False
+            st.rerun()
 
 # Add debug section only if debug mode is enabled
 if st.session_state["debug_mode"]:
@@ -394,6 +407,7 @@ if st.session_state["debug_mode"]:
         st.write("Current Page:", st.session_state["page"])
         st.write("Session State Keys:", list(st.session_state.keys()))
         st.write("Messages Per Page:", {page: len(messages) for page, messages in st.session_state["messages"].items()})
+        st.write("Processing Flag:", st.session_state.get("processing", False))
         if st.session_state["page"] in API_ENDPOINTS:
             st.write("Current API Endpoint:", API_ENDPOINTS[st.session_state["page"]])
             st.write("Connect Timeout:", CONNECT_TIMEOUT)
