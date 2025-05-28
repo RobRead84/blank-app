@@ -46,19 +46,6 @@ def debug_table_detection(message_text):
     st.write(f"Pipe symbols: {pipe_count}")
     st.write(f"Newline+pipe: {newline_pipe_count}")
     
-    # Try to detect table patterns
-    table_pattern1 = r'(\*\*.*?\*\*)\s*\n\s*(\|.*?\|\s*\n\s*\|[-\s|:]+\|\s*\n\s*((?:\|.*?\|\s*\n\s*)+))'
-    table_pattern2 = r'(\|.*?\|\s*\n\s*\|[-\s|:]+\|\s*\n\s*((?:\|.*?\|\s*\n\s*)+))'
-    simple_pattern = r'\|.*?\|.*?\|'
-    
-    matches1 = re.findall(table_pattern1, message_text, re.DOTALL)
-    matches2 = re.findall(table_pattern2, message_text, re.DOTALL)
-    simple_matches = re.findall(simple_pattern, message_text)
-    
-    st.write(f"Pattern 1 matches: {len(matches1)}")
-    st.write(f"Pattern 2 matches: {len(matches2)}")
-    st.write(f"Simple pattern matches: {len(simple_matches)}")
-    
     # Show a sample of the message for inspection
     st.write("### First 500 chars of message:")
     st.code(message_text[:500])
@@ -73,174 +60,74 @@ def debug_table_detection(message_text):
         st.write("### Raw table sample:")
         st.code(message_text[start_idx:end_idx])
 
-# Enhanced function to process markdown tables
-def process_text_with_tables(message_text, table_matches, has_title=True):
-    last_end = 0
-    
-    for match in table_matches:
-        if has_title:
-            title, table_header_row, table_body = match
-            # Rebuild the full match string
-            full_match = f"{title}\n{table_header_row}{table_body}"
-        else:
-            table_header_row, table_body = match
-            title = ""  # No title
-            # Rebuild the full match string
-            full_match = f"{table_header_row}{table_body}"
-        
-        # Find position in original text
-        start_pos = message_text.find(full_match, last_end)
-        
-        # Display text before the table
-        if start_pos > last_end:
-            st.markdown(message_text[last_end:start_pos])
-        
-        # Display the table title if it exists
-        if title and has_title:
-            st.markdown(title)
-        
-        # Extract headers from the header row
-        header_row = table_header_row.strip().split('\n')[0] if has_title else table_header_row.strip()
-        headers = [h.strip() for h in header_row.split('|') if h.strip()]
-        
-        # Extract rows from the table body
-        rows = []
-        for row_text in table_body.strip().split('\n'):
-            if '|' in row_text and not row_text.strip().startswith('|--') and not row_text.strip().startswith('|-:'):
-                # Extract cells, ignoring empty ones at start/end from split
-                cells = [cell.strip() for cell in row_text.split('|')]
-                # Remove empty cells at beginning and end (artifacts of the split)
-                if cells and not cells[0]:
-                    cells = cells[1:]
-                if cells and not cells[-1]:
-                    cells = cells[:-1]
-                
-                if cells:  # Only add if we have actual cells
-                    rows.append(cells)
-        
-        # Create and display DataFrame if we have valid data
-        if headers and rows:
-            # Ensure all rows have the same length as headers
-            normalized_rows = []
-            for row in rows:
-                # If row is too short, pad with empty strings
-                if len(row) < len(headers):
-                    row = row + [''] * (len(headers) - len(row))
-                # If row is too long, truncate
-                elif len(row) > len(headers):
-                    row = row[:len(headers)]
-                normalized_rows.append(row)
-            
-            # Create DataFrame with proper columns
-            df = pd.DataFrame(normalized_rows, columns=headers)
-            
-            # Display with better formatting
-            st.dataframe(df, use_container_width=True)
-        
-        # Update position for next iteration
-        last_end = start_pos + len(full_match)
-    
-    # Display any remaining text after the last table
-    if last_end < len(message_text):
-        st.markdown(message_text[last_end:])
-
-# Improved table detection and rendering function
+# Simplified table rendering function
 def render_message_with_tables(message_text):
-    # First check if we have any potential table indicators
+    # If there are no pipes, it's definitely not a table
     if '|' not in message_text:
         st.markdown(message_text)
         return
     
-    # Try multiple patterns to detect tables
-    
-    # Pattern 1: Title + Table (most specific)
-    pattern1 = r'(\*\*.*?\*\*)\s*\n\s*(\|.*?\|\s*\n\s*\|[-\s|:]+\|\s*\n\s*((?:\|.*?\|\s*\n\s*)+))'
-    matches1 = re.findall(pattern1, message_text, re.DOTALL)
-    
-    if matches1:
-        process_text_with_tables(message_text, matches1, has_title=True)
-        return
-    
-    # Pattern 2: Table without title
-    pattern2 = r'(\|.*?\|\s*\n\s*\|[-\s|:]+\|\s*\n\s*((?:\|.*?\|\s*\n\s*)+))'
-    matches2 = re.findall(pattern2, message_text, re.DOTALL)
-    
-    if matches2:
-        process_text_with_tables(message_text, matches2, has_title=False)
-        return
-    
-    # Pattern 3: Simple pattern for SWOT-style tables (fallback)
-    if "**SWOT" in message_text or "**Strengths" in message_text:
-        # Try a more direct approach for SWOT tables
-        try:
-            # Split by double newlines to find distinct sections
-            sections = message_text.split("\n\n")
-            
-            # Process each section
-            for i, section in enumerate(sections):
-                if "|" in section and ("Strengths" in section or "SWOT" in section):
-                    # This looks like a table section
+    try:
+        # Split the text into segments
+        segments = re.split(r'(\*\*.*?\*\*\s*\n\|.*?\|.*?\n\|[-:\s|]+\|.*?\n(?:\|.*?\|.*?\n)+)', message_text, flags=re.DOTALL)
+        
+        # Process each segment
+        for segment in segments:
+            # Check if this segment contains a table
+            if re.search(r'\|.*?\|.*?\n\|[-:\s|]+\|', segment, re.DOTALL):
+                # This is a table segment
+                
+                # Extract title if present
+                title_match = re.search(r'\*\*(.*?)\*\*', segment)
+                if title_match:
+                    st.markdown(f"**{title_match.group(1)}**")
+                
+                # Extract table rows
+                rows = [row for row in segment.split('\n') if row.strip().startswith('|') and row.strip().endswith('|')]
+                
+                if len(rows) >= 2:  # Need at least header and separator row
+                    # Get the header row
+                    header_row = rows[0]
                     
-                    # Extract table rows
-                    rows = [row.strip() for row in section.split("\n") if "|" in row]
+                    # Skip the separator row
+                    data_rows = rows[2:] if len(rows) > 2 else []
                     
-                    # Skip if not enough rows for a table (need at least header, separator, data)
-                    if len(rows) < 3:
-                        continue
+                    # Create a simple HTML table
+                    html_table = "<table style='width:100%; border-collapse: collapse;'>\n"
                     
-                    # Find the title (usually bold text before the table)
-                    title = ""
-                    if "**" in section and section.index("**") < section.index("|"):
-                        title_match = re.search(r'\*\*(.*?)\*\*', section)
-                        if title_match:
-                            title = f"**{title_match.group(1)}**"
+                    # Add header
+                    html_table += "<thead>\n<tr>\n"
+                    header_cells = [cell.strip() for cell in header_row.split('|') if cell.strip()]
+                    for cell in header_cells:
+                        html_table += f"<th style='border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f2f2f2;'>{cell}</th>\n"
+                    html_table += "</tr>\n</thead>\n"
                     
-                    # Display title if found
-                    if title:
-                        st.markdown(title)
+                    # Add body
+                    html_table += "<tbody>\n"
+                    for row in data_rows:
+                        html_table += "<tr>\n"
+                        cells = [cell.strip() for cell in row.split('|') if cell.strip()]
+                        for cell in cells:
+                            html_table += f"<td style='border: 1px solid #ddd; padding: 8px;'>{cell}</td>\n"
+                        html_table += "</tr>\n"
+                    html_table += "</tbody>\n"
                     
-                    # Extract headers
-                    headers = [h.strip() for h in rows[0].split("|") if h.strip()]
+                    html_table += "</table>"
                     
-                    # Extract data rows (skip the separator row)
-                    data_rows = []
-                    for row in rows[2:]:  # Skip header and separator
-                        cells = [cell.strip() for cell in row.split("|") if cell]
-                        if cells:
-                            data_rows.append(cells)
-                    
-                    # Create and display DataFrame
-                    if headers and data_rows:
-                        # Normalize row lengths
-                        normalized_rows = []
-                        for row in data_rows:
-                            # If row is too short, pad with empty strings
-                            if len(row) < len(headers):
-                                row = row + [''] * (len(headers) - len(row))
-                            # If row is too long, truncate
-                            elif len(row) > len(headers):
-                                row = row[:len(headers)]
-                            normalized_rows.append(row)
-                        
-                        df = pd.DataFrame(normalized_rows, columns=headers)
-                        st.dataframe(df, use_container_width=True)
-                    
-                    # Remove the processed table from the section
-                    sections[i] = re.sub(r'\*\*.*?\*\*\s*\n', '', section, 1)
-                    sections[i] = re.sub(r'\|.*?\|\s*\n', '', sections[i], len(rows))
-            
-            # Reconstruct the message without the tables
-            remaining_text = "\n\n".join([s for s in sections if s.strip()])
-            if remaining_text.strip():
-                st.markdown(remaining_text)
-            
-            return
-        except Exception as e:
-            if st.session_state["debug_mode"]:
-                st.error(f"Error in SWOT table processing: {str(e)}")
-    
-    # If no table patterns matched, just render the markdown
-    st.markdown(message_text)
+                    # Display the HTML table
+                    st.markdown(html_table, unsafe_allow_html=True)
+                else:
+                    # Not enough rows for a valid table, just display as markdown
+                    st.markdown(segment)
+            else:
+                # This is not a table segment, display as normal markdown
+                if segment.strip():
+                    st.markdown(segment)
+    except Exception as e:
+        if st.session_state["debug_mode"]:
+            st.error(f"Error rendering table: {str(e)}")
+        # Fallback to regular markdown rendering
+        st.markdown(message_text)
 
 # Function to extract message from LangFlow response
 def extract_message_from_response(response_data):
