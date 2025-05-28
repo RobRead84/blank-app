@@ -60,7 +60,7 @@ def debug_table_detection(message_text):
         st.write("### Raw table sample:")
         st.code(message_text[start_idx:end_idx])
 
-# Simplified table rendering function
+# Improved rendering function that preserves all text and formats tables correctly
 def render_message_with_tables(message_text):
     # If there are no pipes, it's definitely not a table
     if '|' not in message_text:
@@ -68,61 +68,114 @@ def render_message_with_tables(message_text):
         return
     
     try:
-        # Split the text into segments
-        segments = re.split(r'(\*\*.*?\*\*\s*\n\|.*?\|.*?\n\|[-:\s|]+\|.*?\n(?:\|.*?\|.*?\n)+)', message_text, flags=re.DOTALL)
+        # Look for tables with a specific pattern
+        table_pattern = r'(\*\*.*?\*\*\s*\n)?\s*(\|.*?\|.*?\n\|[-:\s|]+\|.*?\n(?:\|.*?\|.*?\n)+)'
         
-        # Process each segment
-        for segment in segments:
-            # Check if this segment contains a table
-            if re.search(r'\|.*?\|.*?\n\|[-:\s|]+\|', segment, re.DOTALL):
-                # This is a table segment
+        # Find all matches
+        matches = re.finditer(table_pattern, message_text, flags=re.DOTALL)
+        
+        # Keep track of the last position we processed
+        last_end = 0
+        
+        # Process each table found
+        for match in matches:
+            start, end = match.span()
+            table_text = match.group(0)
+            
+            # Display any text before the table
+            if start > last_end:
+                st.markdown(message_text[last_end:start])
+            
+            # Check if there's a title in the table
+            title_match = re.search(r'\*\*(.*?)\*\*', table_text)
+            if title_match:
+                title = title_match.group(1)
+                st.markdown(f"**{title}**")
+                # Remove the title from table_text to avoid duplicating it
+                table_text = re.sub(r'\*\*.*?\*\*\s*\n', '', table_text, count=1)
+            
+            # Process the table rows
+            rows = [row.strip() for row in table_text.split('\n') if row.strip().startswith('|') and row.strip().endswith('|')]
+            
+            if len(rows) >= 2:  # Need at least header and separator row
+                # Extract header cells
+                header_cells = [cell.strip() for cell in rows[0].split('|') if cell.strip()]
                 
-                # Extract title if present
-                title_match = re.search(r'\*\*(.*?)\*\*', segment)
-                if title_match:
-                    st.markdown(f"**{title_match.group(1)}**")
+                # Extract data rows (skip header and separator)
+                data_rows = []
+                for row in rows[2:]:  # Skip header and separator
+                    cells = [cell.strip() for cell in row.split('|') if cell.strip()]
+                    if cells:
+                        data_rows.append(cells)
                 
-                # Extract table rows
-                rows = [row for row in segment.split('\n') if row.strip().startswith('|') and row.strip().endswith('|')]
+                # Create HTML table with better styling
+                html_table = """
+                <style>
+                table.furze-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin: 10px 0;
+                    font-size: 0.9em;
+                    border-radius: 5px;
+                    overflow: hidden;
+                    box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
+                }
+                table.furze-table thead tr {
+                    background-color: #009879;
+                    color: #ffffff;
+                    text-align: left;
+                    font-weight: bold;
+                }
+                table.furze-table th,
+                table.furze-table td {
+                    padding: 12px 15px;
+                    border: 1px solid #dddddd;
+                }
+                table.furze-table tbody tr {
+                    border-bottom: 1px solid #dddddd;
+                }
+                table.furze-table tbody tr:nth-of-type(even) {
+                    background-color: #f3f3f3;
+                }
+                table.furze-table tbody tr:last-of-type {
+                    border-bottom: 2px solid #009879;
+                }
+                </style>
+                <table class="furze-table">
+                """
                 
-                if len(rows) >= 2:  # Need at least header and separator row
-                    # Get the header row
-                    header_row = rows[0]
-                    
-                    # Skip the separator row
-                    data_rows = rows[2:] if len(rows) > 2 else []
-                    
-                    # Create a simple HTML table
-                    html_table = "<table style='width:100%; border-collapse: collapse;'>\n"
-                    
-                    # Add header
-                    html_table += "<thead>\n<tr>\n"
-                    header_cells = [cell.strip() for cell in header_row.split('|') if cell.strip()]
-                    for cell in header_cells:
-                        html_table += f"<th style='border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f2f2f2;'>{cell}</th>\n"
-                    html_table += "</tr>\n</thead>\n"
-                    
-                    # Add body
-                    html_table += "<tbody>\n"
-                    for row in data_rows:
-                        html_table += "<tr>\n"
-                        cells = [cell.strip() for cell in row.split('|') if cell.strip()]
-                        for cell in cells:
-                            html_table += f"<td style='border: 1px solid #ddd; padding: 8px;'>{cell}</td>\n"
-                        html_table += "</tr>\n"
-                    html_table += "</tbody>\n"
-                    
-                    html_table += "</table>"
-                    
-                    # Display the HTML table
-                    st.markdown(html_table, unsafe_allow_html=True)
-                else:
-                    # Not enough rows for a valid table, just display as markdown
-                    st.markdown(segment)
+                # Add header
+                html_table += "<thead>\n<tr>\n"
+                for cell in header_cells:
+                    html_table += f"<th>{cell}</th>\n"
+                html_table += "</tr>\n</thead>\n"
+                
+                # Add body
+                html_table += "<tbody>\n"
+                for row in data_rows:
+                    html_table += "<tr>\n"
+                    # Make sure we don't exceed the number of header cells
+                    for i, cell in enumerate(row):
+                        if i < len(header_cells):
+                            html_table += f"<td>{cell}</td>\n"
+                    html_table += "</tr>\n"
+                html_table += "</tbody>\n"
+                
+                html_table += "</table>"
+                
+                # Display the HTML table
+                st.markdown(html_table, unsafe_allow_html=True)
             else:
-                # This is not a table segment, display as normal markdown
-                if segment.strip():
-                    st.markdown(segment)
+                # Not enough rows for a valid table, just display as markdown
+                st.markdown(table_text)
+            
+            # Update the last_end position for the next iteration
+            last_end = end
+        
+        # Display any remaining text after the last table
+        if last_end < len(message_text):
+            st.markdown(message_text[last_end:])
+    
     except Exception as e:
         if st.session_state["debug_mode"]:
             st.error(f"Error rendering table: {str(e)}")
