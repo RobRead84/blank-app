@@ -38,15 +38,19 @@ READ_TIMEOUT = 300.0    # Read timeout - increased to 5 minutes
 
 def display_message_with_tables(content):
     """
-    Display content with proper table rendering using unsafe_allow_html
+    Display content with proper table rendering - multiple fallback approaches
     """
-    # Enable markdown tables by allowing HTML
+    # Method 1: Try unsafe_allow_html first
     try:
-        # First, try to render with unsafe_allow_html to enable table support
-        st.markdown(content, unsafe_allow_html=True)
-    except:
-        # Fallback: manually parse and create tables
-        if "|" in content and "---" in content:
+        if "|" in content and ("---" in content or "--|" in content):
+            st.markdown(content, unsafe_allow_html=True)
+            return
+    except Exception as e:
+        pass
+    
+    # Method 2: Manual parsing approach
+    if "|" in content and ("---" in content or "--|" in content):
+        try:
             # Split content by lines
             lines = content.split('\n')
             current_text = []
@@ -65,7 +69,7 @@ def display_message_with_tables(content):
                             current_text = []
                         in_table = True
                     table_lines.append(line)
-                elif line.startswith('|') and '---' in line:
+                elif line.startswith('|') and ('---' in line or '--|' in line):
                     # This is a table separator line
                     table_lines.append(line)
                 else:
@@ -83,9 +87,12 @@ def display_message_with_tables(content):
                 render_table_from_lines(table_lines)
             elif current_text:
                 st.markdown('\n'.join(current_text))
-        else:
-            # No tables detected, render normally
-            st.markdown(content)
+            return
+        except Exception as e:
+            pass
+    
+    # Method 3: Fallback to regular markdown
+    st.markdown(content)
 
 def render_table_from_lines(table_lines):
     """
@@ -370,3 +377,36 @@ And here's some text after the table."""
             st.code(test_table)
             st.write("**Rendered output:**")
             display_message_with_tables(test_table)
+        
+        # Add version and environment info
+        st.write("**Environment Information:**")
+        st.write(f"Streamlit version: {st.__version__}")
+        st.write(f"Pandas version: {pd.__version__}")
+        
+        # Test actual API response format
+        if st.button("Debug Last API Response", key="debug_api_response"):
+            if st.session_state["messages"][st.session_state["page"]]:
+                last_assistant_msg = None
+                for msg in reversed(st.session_state["messages"][st.session_state["page"]]):
+                    if msg["role"] == "assistant":
+                        last_assistant_msg = msg["content"]
+                        break
+                
+                if last_assistant_msg:
+                    st.write("**Last API Response Content:**")
+                    st.code(last_assistant_msg[:500] + "..." if len(last_assistant_msg) > 500 else last_assistant_msg)
+                    
+                    # Check if it contains table markers
+                    has_pipes = "|" in last_assistant_msg
+                    has_dashes = "---" in last_assistant_msg or "--|" in last_assistant_msg
+                    st.write(f"Contains pipe characters: {has_pipes}")
+                    st.write(f"Contains table separators: {has_dashes}")
+                    
+                    if has_pipes and has_dashes:
+                        st.write("✅ Response appears to contain markdown table")
+                    else:
+                        st.write("❌ Response doesn't appear to contain markdown table format")
+                else:
+                    st.write("No assistant messages found")
+            else:
+                st.write("No messages in current chat")
