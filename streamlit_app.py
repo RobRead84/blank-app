@@ -50,8 +50,7 @@ def display_message_with_tables(content):
             st.write("First 200 chars:")
             st.code(content[:200])
     
-    # Skip unsafe_allow_html approach - it doesn't parse markdown tables
-    # Go straight to manual parsing for any content with pipes
+    # Manual parsing for any content with pipes
     if "|" in content:
         try:
             lines = content.split('\n')
@@ -62,7 +61,7 @@ def display_message_with_tables(content):
             for i, line in enumerate(lines):
                 line_stripped = line.strip()
                 
-                # More flexible table detection
+                # Check if this line looks like a table row
                 is_table_row = (line_stripped.startswith('|') and 
                               line_stripped.endswith('|') and 
                               line_stripped.count('|') >= 3)
@@ -79,16 +78,19 @@ def display_message_with_tables(content):
                         in_table = True
                     table_lines.append(line_stripped)
                 else:
-                    if in_table:
-                        # End of table, render it
+                    # Only end table if we hit a completely non-table line
+                    # Empty lines or lines with just whitespace should not end the table
+                    if in_table and line_stripped != "":
+                        # This is a non-empty, non-table line - end the table
                         if st.session_state.get("debug_mode", False):
                             st.write(f"🔧 Rendering table with {len(table_lines)} lines")
                         render_table_from_lines(table_lines)
                         table_lines = []
                         in_table = False
                     
-                    # Add this line to current text (preserve empty lines for formatting)
-                    current_text.append(line)
+                    # Add this line to current text if it's not empty or if we're not in a table
+                    if line_stripped != "" or not in_table:
+                        current_text.append(line)
             
             # Handle any remaining content
             if table_lines and in_table:
