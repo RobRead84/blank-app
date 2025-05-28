@@ -17,6 +17,10 @@ if "messages" not in st.session_state:
     for page in ["Furze AI", "Eco System Identification", "Eco System + SWOT", "Eco System + SWOT + Scenarios"]:
         st.session_state["messages"][page] = []
 
+# Initialize debug mode in session state
+if "debug_mode" not in st.session_state:
+    st.session_state["debug_mode"] = False
+
 # Updated API endpoints for different chat modules with increased timeout parameters.
 # Using the web-server urls instead of CloudFront URLs
 API_ENDPOINTS = {
@@ -31,79 +35,212 @@ API_ENDPOINTS = {
 CONNECT_TIMEOUT = 10.0  # Connection timeout
 READ_TIMEOUT = 300.0    # Read timeout - increased to 5 minutes
 
-# Function to render markdown messages with proper table handling
-def render_message_with_tables(message_text):
-    # Regular expression to find markdown tables
-    table_pattern = r'(\*\*.*?\*\*)\s*\n\|(.*?)\|\n\|([-\s|]+)\|\n((?:\|.*?\|\n)+)'
+# Debug function to analyze table detection issues
+def debug_table_detection(message_text):
+    st.write("### Debug: Table Detection")
     
-    # Find all tables in the message
-    table_matches = re.findall(table_pattern, message_text, re.DOTALL)
+    # Count table-like markers
+    pipe_count = message_text.count('|')
+    newline_pipe_count = message_text.count('\n|')
     
-    if not table_matches:
-        # If no tables found, just render the markdown normally
-        st.markdown(message_text)
-        return
+    st.write(f"Pipe symbols: {pipe_count}")
+    st.write(f"Newline+pipe: {newline_pipe_count}")
     
-    # Process the message with tables
+    # Try to detect table patterns
+    table_pattern1 = r'(\*\*.*?\*\*)\s*\n\s*(\|.*?\|\s*\n\s*\|[-\s|:]+\|\s*\n\s*((?:\|.*?\|\s*\n\s*)+))'
+    table_pattern2 = r'(\|.*?\|\s*\n\s*\|[-\s|:]+\|\s*\n\s*((?:\|.*?\|\s*\n\s*)+))'
+    simple_pattern = r'\|.*?\|.*?\|'
+    
+    matches1 = re.findall(table_pattern1, message_text, re.DOTALL)
+    matches2 = re.findall(table_pattern2, message_text, re.DOTALL)
+    simple_matches = re.findall(simple_pattern, message_text)
+    
+    st.write(f"Pattern 1 matches: {len(matches1)}")
+    st.write(f"Pattern 2 matches: {len(matches2)}")
+    st.write(f"Simple pattern matches: {len(simple_matches)}")
+    
+    # Show a sample of the message for inspection
+    st.write("### First 500 chars of message:")
+    st.code(message_text[:500])
+    
+    # If we have a table, show its raw form
+    if '|' in message_text and '\n|' in message_text:
+        start_idx = message_text.find('\n|')
+        end_idx = message_text.find('\n\n', start_idx)
+        if end_idx == -1:
+            end_idx = min(start_idx + 500, len(message_text))
+        
+        st.write("### Raw table sample:")
+        st.code(message_text[start_idx:end_idx])
+
+# Enhanced function to process markdown tables
+def process_text_with_tables(message_text, table_matches, has_title=True):
     last_end = 0
+    
     for match in table_matches:
-        # Get the full matched string to determine position
-        full_match = f"{match[0]}\n|{match[1]}|\n|{match[2]}|\n{match[3]}"
+        if has_title:
+            title, table_header_row, table_body = match
+            # Rebuild the full match string
+            full_match = f"{title}\n{table_header_row}{table_body}"
+        else:
+            table_header_row, table_body = match
+            title = ""  # No title
+            # Rebuild the full match string
+            full_match = f"{table_header_row}{table_body}"
+        
+        # Find position in original text
         start_pos = message_text.find(full_match, last_end)
         
         # Display text before the table
         if start_pos > last_end:
             st.markdown(message_text[last_end:start_pos])
         
-        # Display the table title
-        st.markdown(match[0])  # The title in bold
+        # Display the table title if it exists
+        if title and has_title:
+            st.markdown(title)
         
-        # Extract headers
-        headers = [h.strip() for h in match[1].split('|') if h.strip()]
+        # Extract headers from the header row
+        header_row = table_header_row.strip().split('\n')[0] if has_title else table_header_row.strip()
+        headers = [h.strip() for h in header_row.split('|') if h.strip()]
         
-        # Extract rows
-        rows_text = match[3]
+        # Extract rows from the table body
         rows = []
-        for row_text in rows_text.strip().split('\n'):
-            # Skip separator rows
-            if not re.search(r'[A-Za-z0-9]', row_text):
-                continue
-            row = [cell.strip() for cell in row_text.split('|')[1:-1]]
-            rows.append(row)
+        for row_text in table_body.strip().split('\n'):
+            if '|' in row_text and not row_text.strip().startswith('|--') and not row_text.strip().startswith('|-:'):
+                # Extract cells, ignoring empty ones at start/end from split
+                cells = [cell.strip() for cell in row_text.split('|')]
+                # Remove empty cells at beginning and end (artifacts of the split)
+                if cells and not cells[0]:
+                    cells = cells[1:]
+                if cells and not cells[-1]:
+                    cells = cells[:-1]
+                
+                if cells:  # Only add if we have actual cells
+                    rows.append(cells)
         
-        # Create and display DataFrame
-        if rows:
-            df = pd.DataFrame(rows, columns=headers)
+        # Create and display DataFrame if we have valid data
+        if headers and rows:
+            # Ensure all rows have the same length as headers
+            normalized_rows = []
+            for row in rows:
+                # If row is too short, pad with empty strings
+                if len(row) < len(headers):
+                    row = row + [''] * (len(headers) - len(row))
+                # If row is too long, truncate
+                elif len(row) > len(headers):
+                    row = row[:len(headers)]
+                normalized_rows.append(row)
+            
+            # Create DataFrame with proper columns
+            df = pd.DataFrame(normalized_rows, columns=headers)
+            
+            # Display with better formatting
             st.dataframe(df, use_container_width=True)
         
-        # Update last position
+        # Update position for next iteration
         last_end = start_pos + len(full_match)
     
     # Display any remaining text after the last table
     if last_end < len(message_text):
         st.markdown(message_text[last_end:])
 
-# Sidebar for navigation
-with st.sidebar:
-    # Display branded logo
-    try:
-        st.image("https://github.com/RobRead84/blank-app/blob/main/Firehills-logo-h-dark-yellowdoctor.png?raw=true", width=250)
-    except:
-        # Fallback to text if logo fails to load
-        st.markdown("# 🌿 Furze")
+# Improved table detection and rendering function
+def render_message_with_tables(message_text):
+    # First check if we have any potential table indicators
+    if '|' not in message_text:
+        st.markdown(message_text)
+        return
     
-    # Navigation
-    st.title("Navigation")
-    for page in ["Home", "Furze AI", "Eco System Identification", "Eco System + SWOT", "Eco System + SWOT + Scenarios"]:
-        if st.button(page, key=f"nav_{page}"):
-            st.session_state["page"] = page
+    # Try multiple patterns to detect tables
     
-    # About section
-    st.title("About")
-    st.info(
-        "This is the interface for Furze AI. "
-        "Select a page from the navigation above to get started."
-    )
+    # Pattern 1: Title + Table (most specific)
+    pattern1 = r'(\*\*.*?\*\*)\s*\n\s*(\|.*?\|\s*\n\s*\|[-\s|:]+\|\s*\n\s*((?:\|.*?\|\s*\n\s*)+))'
+    matches1 = re.findall(pattern1, message_text, re.DOTALL)
+    
+    if matches1:
+        process_text_with_tables(message_text, matches1, has_title=True)
+        return
+    
+    # Pattern 2: Table without title
+    pattern2 = r'(\|.*?\|\s*\n\s*\|[-\s|:]+\|\s*\n\s*((?:\|.*?\|\s*\n\s*)+))'
+    matches2 = re.findall(pattern2, message_text, re.DOTALL)
+    
+    if matches2:
+        process_text_with_tables(message_text, matches2, has_title=False)
+        return
+    
+    # Pattern 3: Simple pattern for SWOT-style tables (fallback)
+    if "**SWOT" in message_text or "**Strengths" in message_text:
+        # Try a more direct approach for SWOT tables
+        try:
+            # Split by double newlines to find distinct sections
+            sections = message_text.split("\n\n")
+            
+            # Process each section
+            for i, section in enumerate(sections):
+                if "|" in section and ("Strengths" in section or "SWOT" in section):
+                    # This looks like a table section
+                    
+                    # Extract table rows
+                    rows = [row.strip() for row in section.split("\n") if "|" in row]
+                    
+                    # Skip if not enough rows for a table (need at least header, separator, data)
+                    if len(rows) < 3:
+                        continue
+                    
+                    # Find the title (usually bold text before the table)
+                    title = ""
+                    if "**" in section and section.index("**") < section.index("|"):
+                        title_match = re.search(r'\*\*(.*?)\*\*', section)
+                        if title_match:
+                            title = f"**{title_match.group(1)}**"
+                    
+                    # Display title if found
+                    if title:
+                        st.markdown(title)
+                    
+                    # Extract headers
+                    headers = [h.strip() for h in rows[0].split("|") if h.strip()]
+                    
+                    # Extract data rows (skip the separator row)
+                    data_rows = []
+                    for row in rows[2:]:  # Skip header and separator
+                        cells = [cell.strip() for cell in row.split("|") if cell]
+                        if cells:
+                            data_rows.append(cells)
+                    
+                    # Create and display DataFrame
+                    if headers and data_rows:
+                        # Normalize row lengths
+                        normalized_rows = []
+                        for row in data_rows:
+                            # If row is too short, pad with empty strings
+                            if len(row) < len(headers):
+                                row = row + [''] * (len(headers) - len(row))
+                            # If row is too long, truncate
+                            elif len(row) > len(headers):
+                                row = row[:len(headers)]
+                            normalized_rows.append(row)
+                        
+                        df = pd.DataFrame(normalized_rows, columns=headers)
+                        st.dataframe(df, use_container_width=True)
+                    
+                    # Remove the processed table from the section
+                    sections[i] = re.sub(r'\*\*.*?\*\*\s*\n', '', section, 1)
+                    sections[i] = re.sub(r'\|.*?\|\s*\n', '', sections[i], len(rows))
+            
+            # Reconstruct the message without the tables
+            remaining_text = "\n\n".join([s for s in sections if s.strip()])
+            if remaining_text.strip():
+                st.markdown(remaining_text)
+            
+            return
+        except Exception as e:
+            if st.session_state["debug_mode"]:
+                st.error(f"Error in SWOT table processing: {str(e)}")
+    
+    # If no table patterns matched, just render the markdown
+    st.markdown(message_text)
 
 # Function to extract message from LangFlow response
 def extract_message_from_response(response_data):
@@ -185,6 +322,32 @@ def query_langflow_api(user_input, endpoint):
     except Exception as e:
         return {"error": f"Unexpected Error: {e}"}
 
+# Sidebar for navigation
+with st.sidebar:
+    # Display branded logo
+    try:
+        st.image("https://github.com/RobRead84/blank-app/blob/main/Firehills-logo-h-dark-yellowdoctor.png?raw=true", width=250)
+    except:
+        # Fallback to text if logo fails to load
+        st.markdown("# 🌿 Furze")
+    
+    # Navigation
+    st.title("Navigation")
+    for page in ["Home", "Furze AI", "Eco System Identification", "Eco System + SWOT", "Eco System + SWOT + Scenarios"]:
+        if st.button(page, key=f"nav_{page}"):
+            st.session_state["page"] = page
+    
+    # About section
+    st.title("About")
+    st.info(
+        "This is the interface for Furze AI. "
+        "Select a page from the navigation above to get started."
+    )
+    
+    # Developer options
+    st.title("Developer Options")
+    st.session_state["debug_mode"] = st.checkbox("Enable Debug Mode", value=st.session_state["debug_mode"])
+
 # Content for each page
 if st.session_state["page"] == "Home":
     st.title("Furze from Firehills")
@@ -242,6 +405,8 @@ else:  # For all chat pages, use the same template with different endpoints
         for message in st.session_state["messages"][current_page]:
             with st.chat_message(message["role"]):
                 if message["role"] == "assistant":
+                    if st.session_state["debug_mode"] and "|" in message["content"]:
+                        debug_table_detection(message["content"])
                     render_message_with_tables(message["content"])
                 else:
                     st.markdown(message["content"])
@@ -266,6 +431,10 @@ else:  # For all chat pages, use the same template with different endpoints
                     else:
                         # Extract the message using our function
                         response_text = extract_message_from_response(response_data)
+                    
+                    # Show debug info if enabled
+                    if st.session_state["debug_mode"] and "|" in response_text:
+                        debug_table_detection(response_text)
                     
                     # Display the response with proper table handling
                     render_message_with_tables(response_text)
