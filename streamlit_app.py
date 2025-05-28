@@ -1,6 +1,8 @@
 import streamlit as st
 import requests
 import json
+import re
+import pandas as pd
 
 # Set page config and title
 st.set_page_config(page_title="Furze from Firehills", page_icon="🌿")
@@ -32,6 +34,101 @@ API_ENDPOINTS = {
 # Increase these values to prevent timeouts with long-running API calls
 CONNECT_TIMEOUT = 10.0  # Connection timeout
 READ_TIMEOUT = 300.0    # Read timeout - increased to 5 minutes
+
+# Function to detect and parse markdown tables
+def parse_markdown_table(text):
+    """
+    Parse markdown tables from text and return a list of DataFrames and remaining text parts
+    """
+    # Regex pattern to match markdown tables
+    table_pattern = r'\|.*?\|(?:\r?\n\|.*?\|)*'
+    
+    # Find all tables in the text
+    tables = re.findall(table_pattern, text, re.MULTILINE)
+    
+    if not tables:
+        return [(text, 'text')]
+    
+    # Split text by tables to preserve order
+    parts = []
+    remaining_text = text
+    
+    for table_text in tables:
+        # Split by this table
+        before, after = remaining_text.split(table_text, 1)
+        
+        # Add text before table if it exists
+        if before.strip():
+            parts.append((before.strip(), 'text'))
+        
+        # Parse the table
+        try:
+            df = parse_single_markdown_table(table_text)
+            if df is not None:
+                parts.append((df, 'table'))
+            else:
+                # If parsing fails, treat as text
+                parts.append((table_text, 'text'))
+        except:
+            # If parsing fails, treat as text
+            parts.append((table_text, 'text'))
+        
+        remaining_text = after
+    
+    # Add any remaining text
+    if remaining_text.strip():
+        parts.append((remaining_text.strip(), 'text'))
+    
+    return parts
+
+def parse_single_markdown_table(table_text):
+    """
+    Parse a single markdown table string into a pandas DataFrame
+    """
+    try:
+        lines = [line.strip() for line in table_text.strip().split('\n') if line.strip()]
+        
+        if len(lines) < 2:
+            return None
+        
+        # Extract headers (first line)
+        header_line = lines[0]
+        headers = [col.strip() for col in header_line.split('|') if col.strip()]
+        
+        # Skip separator line (second line with dashes)
+        data_lines = lines[2:] if len(lines) > 2 else []
+        
+        # Extract data rows
+        rows = []
+        for line in data_lines:
+            if '|' in line:
+                row = [col.strip() for col in line.split('|') if col.strip()]
+                if len(row) == len(headers):  # Only add rows with correct number of columns
+                    rows.append(row)
+        
+        if not rows:
+            return None
+        
+        # Create DataFrame
+        df = pd.DataFrame(rows, columns=headers)
+        return df
+        
+    except Exception as e:
+        return None
+
+def render_content_with_tables(content):
+    """
+    Render content that may contain markdown tables
+    """
+    parts = parse_markdown_table(content)
+    
+    for part, part_type in parts:
+        if part_type == 'text':
+            # Render as regular markdown
+            st.markdown(part)
+        elif part_type == 'table':
+            # Render as Streamlit table
+            st.dataframe(part, use_container_width=True)
 
 # Sidebar for navigation
 with st.sidebar:
@@ -198,7 +295,12 @@ else:  # For all chat pages, use the same template with different endpoints
         # Display chat messages from history
         for message in st.session_state["messages"][current_page]:
             with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+                if message["role"] == "assistant":
+                    # Use the new table rendering function for assistant messages
+                    render_content_with_tables(message["content"])
+                else:
+                    # Regular markdown for user messages
+                    st.markdown(message["content"])
         
         # Chat input
         if prompt := st.chat_input("What would you like to ask?"):
@@ -217,12 +319,13 @@ else:  # For all chat pages, use the same template with different endpoints
                     
                     if "error" in response_data:
                         response_text = f"Sorry, I encountered an error: {response_data['error']}"
+                        st.markdown(response_text)
                     else:
                         # Extract the message using our function
                         response_text = extract_message_from_response(response_data)
-                    
-                    # Display the complete response at once
-                    st.markdown(response_text)
+                        
+                        # Use the new table rendering function
+                        render_content_with_tables(response_text)
                     
                     # Add assistant response to chat history
                     st.session_state["messages"][current_page].append({"role": "assistant", "content": response_text})
@@ -256,3 +359,14 @@ if st.session_state["debug_mode"]:
                     st.success("No redirects detected.")
             except Exception as e:
                 st.error(f"Connection test failed: {str(e)}")
+        
+        # Add table parsing test button
+        if st.button("Test Table Parsing"):
+            test_table = """| Role Type | Activities & Evidence | Revenue Generated (FY24) |
+|---------------------|--------------------------------------------------------------------------------------------------------|------------------------------------|
+| Keystone | Orchestrates value chain, controls IP, invests in ecosystem health | £494.7m (total) |
+| Licensor | Licenses IP for games, media, merchandise; strict brand control | £31.4m |
+| Platform Provider | Retail/online/event platforms, digital tools, community engagement | Retail: £62.0m, Online: £43.0m, Trade: £169.2m |"""
+            
+            st.write("Testing table parsing with sample data:")
+            render_content_with_tables(test_table)
