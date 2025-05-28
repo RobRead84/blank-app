@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 import json
-import pandas as pd
 import re
 
 # Set page config and title
@@ -21,8 +20,7 @@ if "messages" not in st.session_state:
 if "debug_mode" not in st.session_state:
     st.session_state["debug_mode"] = False
 
-# Updated API endpoints for different chat modules with increased timeout parameters.
-# Using the web-server urls instead of CloudFront URLs
+# API endpoints for different chat modules
 API_ENDPOINTS = {
     "Furze AI": "https://web-server-5a231649.fctl.app/api/v1/run/55de672f-c877-4541-8890-2554b2e810a8",
     "Eco System Identification": "https://web-server-5a231649.fctl.app/api/v1/run/9da63433-bb7b-4f41-a5e5-89d025345030",
@@ -31,66 +29,78 @@ API_ENDPOINTS = {
 }
 
 # Request timeout settings (in seconds)
-# Increase these values to prevent timeouts with long-running API calls
-CONNECT_TIMEOUT = 10.0  # Connection timeout
-READ_TIMEOUT = 300.0    # Read timeout - increased to 5 minutes
+CONNECT_TIMEOUT = 10.0
+READ_TIMEOUT = 300.0
 
-# Debug function to analyze table detection issues
-def debug_table_detection(message_text):
-    st.write("### Debug: Table Detection")
+def convert_table_to_html(table_lines):
+    """Convert table lines to HTML table"""
+    if not table_lines:
+        return ""
     
-    # Count table-like markers
-    pipe_count = message_text.count('|')
-    newline_pipe_count = message_text.count('\n|')
+    # Parse first line as header
+    header_line = table_lines[0].strip()
+    header_cells = [cell.strip() for cell in header_line.split('|')[1:-1]]
     
-    st.write(f"Pipe symbols: {pipe_count}")
-    st.write(f"Newline+pipe: {newline_pipe_count}")
+    # Check if second line is a separator (contains only -, :, |, and spaces)
+    data_start = 1
+    if len(table_lines) > 1:
+        separator_line = table_lines[1].strip()
+        if re.match(r'^\|[\s\-:|\s]*\|$', separator_line):
+            data_start = 2
     
-    # Show a sample of the message for inspection
-    st.write("### First 500 chars of message:")
-    st.code(message_text[:500])
+    # Build HTML table
+    html = '<table class="custom-table">\n'
     
-    # If we have a table, show its raw form
-    if '|' in message_text and '\n|' in message_text:
-        start_idx = message_text.find('\n|')
-        end_idx = message_text.find('\n\n', start_idx)
-        if end_idx == -1:
-            end_idx = min(start_idx + 500, len(message_text))
-        
-        st.write("### Raw table sample:")
-        st.code(message_text[start_idx:end_idx])
+    # Add header
+    html += '<thead>\n<tr>\n'
+    for cell in header_cells:
+        html += f'<th>{cell}</th>\n'
+    html += '</tr>\n</thead>\n'
+    
+    # Add data rows
+    html += '<tbody>\n'
+    for line in table_lines[data_start:]:
+        line = line.strip()
+        if line:
+            cells = [cell.strip() for cell in line.split('|')[1:-1]]
+            html += '<tr>\n'
+            for cell in cells:
+                html += f'<td>{cell}</td>\n'
+            html += '</tr>\n'
+    html += '</tbody>\n'
+    
+    html += '</table>'
+    return html
 
-# Improved rendering function that preserves all text and formats tables correctly
 def render_message_with_tables(message_text):
-    # Add custom CSS for table styling
+    """Render message text with proper table formatting"""
+    # Add custom CSS for table styling that respects Streamlit's theme
     st.markdown("""
     <style>
-    .markdown-table-wrapper {
-        overflow-x: auto;
-        margin: 1em 0;
-    }
-    .markdown-table {
+    .custom-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 0.9em;
-        margin-bottom: 20px;
+        margin: 1em 0;
+        font-family: inherit;
+        font-size: inherit;
+        color: inherit;
     }
-    .markdown-table thead tr {
-        background-color: #4CAF50;
-        color: white;
+    .custom-table th,
+    .custom-table td {
+        padding: 8px 12px;
         text-align: left;
+        border: 1px solid var(--text-color, #262730);
+        opacity: 0.3;
     }
-    .markdown-table th,
-    .markdown-table td {
-        padding: 12px 15px;
-        border: 1px solid #dddddd;
+    .custom-table th {
+        font-weight: bold;
+        border-bottom: 2px solid var(--text-color, #262730);
     }
-    .markdown-table tbody tr {
-        border-bottom: 1px solid #dddddd;
-        background-color: #f8f8f8;  /* Light uniform background for all rows */
+    .custom-table tr:nth-child(even) {
+        background-color: transparent;
     }
-    .markdown-table tbody tr:last-of-type {
-        border-bottom: 2px solid #4CAF50;
+    .custom-table tr:nth-child(odd) {
+        background-color: transparent;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -101,119 +111,71 @@ def render_message_with_tables(message_text):
         return
     
     try:
-        # This function will process a block of text that may contain a table
-        def process_text_block(text_block):
-            # Check if this block contains a table
-            if '|' not in text_block or '\n|' not in text_block:
-                # No table in this block, just render as markdown
-                st.markdown(text_block)
-                return
+        # Split message into lines
+        lines = message_text.split('\n')
+        processed_lines = []
+        i = 0
+        
+        while i < len(lines):
+            line = lines[i].strip()
             
-            # Extract a potential title
-            title_match = re.search(r'^\s*\*\*(.*?)\*\*\s*$', text_block, re.MULTILINE)
-            if title_match:
-                title = title_match.group(1)
-                # Remove the title from the text block to avoid duplication
-                text_block = re.sub(r'^\s*\*\*(.*?)\*\*\s*$', '', text_block, count=1, flags=re.MULTILINE)
-                st.markdown(f"**{title}**")
-            
-            # Find all table rows (lines starting and ending with |)
-            table_rows = re.findall(r'^\s*\|.*\|\s*$', text_block, re.MULTILINE)
-            
-            if len(table_rows) >= 3:  # Need at least header, separator, and one data row
-                # Extract header row
-                header_row = table_rows[0].strip()
-                header_cells = [cell.strip() for cell in header_row.split('|') if cell.strip()]
+            # Check if this line looks like a table row (contains |)
+            if '|' in line and line.startswith('|') and line.endswith('|'):
+                # Found potential table start
+                table_lines = []
                 
-                # Check if second row is a separator row (contains only -, :, and |)
-                separator_row = table_rows[1].strip()
-                if not re.match(r'^\|(\s*[-:]+\s*\|)+$', separator_row):
-                    # Not a valid separator row, treat all rows as data
-                    data_rows = table_rows
-                    header_cells = [f"Column {i+1}" for i in range(len(header_cells))]
+                # Collect all consecutive table lines
+                while i < len(lines):
+                    current_line = lines[i].strip()
+                    if '|' in current_line and current_line.startswith('|') and current_line.endswith('|'):
+                        table_lines.append(current_line)
+                        i += 1
+                    else:
+                        break
+                
+                # Process the table if we have at least 2 lines (header + data)
+                if len(table_lines) >= 2:
+                    # Render any text before the table
+                    if processed_lines:
+                        st.markdown('\n'.join(processed_lines))
+                        processed_lines = []
+                    
+                    # Convert table lines to HTML
+                    html_table = convert_table_to_html(table_lines)
+                    st.markdown(html_table, unsafe_allow_html=True)
                 else:
-                    # Valid separator row, use remaining rows as data
-                    data_rows = table_rows[2:]
-                
-                # Create HTML table
-                table_html = '<div class="markdown-table-wrapper"><table class="markdown-table">\n'
-                
-                # Add header
-                table_html += '<thead>\n<tr>\n'
-                for cell in header_cells:
-                    table_html += f'<th>{cell}</th>\n'
-                table_html += '</tr>\n</thead>\n'
-                
-                # Add body
-                table_html += '<tbody>\n'
-                for row in data_rows:
-                    row = row.strip()
-                    cells = [cell.strip() for cell in row.split('|') if cell]
-                    if cells:
-                        table_html += '<tr>\n'
-                        for cell in cells:
-                            table_html += f'<td>{cell}</td>\n'
-                        table_html += '</tr>\n'
-                table_html += '</tbody>\n'
-                
-                table_html += '</table></div>'
-                
-                # Display the table
-                st.markdown(table_html, unsafe_allow_html=True)
-                
-                # Remove the table rows from the text block
-                for row in table_rows:
-                    text_block = text_block.replace(row, '')
-                
-                # Render any remaining text after removing the table
-                remaining_text = text_block.strip()
-                if remaining_text:
-                    st.markdown(remaining_text)
+                    # Not a valid table, add lines back to processed_lines
+                    processed_lines.extend(table_lines)
             else:
-                # Not enough rows for a table, render as markdown
-                st.markdown(text_block)
+                # Regular line, add to processed_lines
+                processed_lines.append(lines[i])
+                i += 1
         
-        # Split the message by double newlines to get text blocks
-        # This helps identify separate sections that may contain tables
-        text_blocks = re.split(r'\n\s*\n', message_text)
-        
-        # Check if any block contains a table
-        has_table = False
-        for block in text_blocks:
-            if '|' in block and '\n|' in block:
-                has_table = True
-                break
-        
-        if has_table:
-            # Process each text block
-            for block in text_blocks:
-                if block.strip():
-                    process_text_block(block.strip())
-        else:
-            # No tables found, render the whole message as markdown
-            st.markdown(message_text)
-        
+        # Render any remaining text
+        if processed_lines:
+            st.markdown('\n'.join(processed_lines))
+            
     except Exception as e:
-        if st.session_state["debug_mode"]:
+        if st.session_state.get("debug_mode", False):
             st.error(f"Error rendering table: {str(e)}")
             st.code(message_text)
         # Fallback to regular markdown rendering
         st.markdown(message_text)
 
-# Function to extract message from LangFlow response
 def extract_message_from_response(response_data):
+    """Extract message text from LangFlow API response"""
     try:
-        # Path 1: Try to get message from the nested structure based on the example
+        # Try to get message from the nested structure
         if "outputs" in response_data and isinstance(response_data["outputs"], list) and len(response_data["outputs"]) > 0:
             first_output = response_data["outputs"][0]
             if "outputs" in first_output and isinstance(first_output["outputs"], list) and len(first_output["outputs"]) > 0:
                 inner_output = first_output["outputs"][0]
                 
-                # Path 1a: Try to get from messages array
+                # Try to get from messages array
                 if "messages" in inner_output and isinstance(inner_output["messages"], list) and len(inner_output["messages"]) > 0:
                     return inner_output["messages"][0]["message"]
                 
-                # Path 1b: Try to get from results.message.text
+                # Try to get from results.message.text
                 if "results" in inner_output and "message" in inner_output["results"]:
                     message_obj = inner_output["results"]["message"]
                     if "text" in message_obj:
@@ -221,13 +183,13 @@ def extract_message_from_response(response_data):
                     elif "data" in message_obj and "text" in message_obj["data"]:
                         return message_obj["data"]["text"]
         
-        # Fallback to string representation if we can't find the message
+        # Fallback to string representation
         return json.dumps(response_data, indent=2)
     except Exception as e:
         return f"Error extracting message: {str(e)}\nRaw response: {str(response_data)[:200]}..."
 
-# Function to query LangFlow API and return full response
 def query_langflow_api(user_input, endpoint):
+    """Query the LangFlow API with user input"""
     payload = {
         "input_value": user_input,
         "output_type": "chat",
@@ -236,24 +198,21 @@ def query_langflow_api(user_input, endpoint):
     
     headers = {
         "Content-Type": "application/json",
-        # Adding additional headers to ensure direct connection and prevent redirects
         "Host": "web-server-5a231649.fctl.app",
         "Connection": "keep-alive"
     }
     
     try:
-        # Make the request with explicit timeouts to prevent 504 errors
         response = requests.post(
             endpoint, 
             json=payload, 
             headers=headers, 
-            timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),  # (connect timeout, read timeout)
-            allow_redirects=False  # Try to prevent redirects to CloudFront
+            timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
+            allow_redirects=False
         )
         
-        # Check for redirect - if redirected, we'll use the direct URL we want
+        # Handle redirects
         if response.status_code in (301, 302, 303, 307, 308):
-            # Get the real URL from our mapping - use the original endpoint
             response = requests.post(
                 endpoint, 
                 json=payload, 
@@ -262,8 +221,6 @@ def query_langflow_api(user_input, endpoint):
             )
         
         response.raise_for_status()
-        
-        # Get the full response
         full_response = response.json()
         
         if "error" in full_response:
@@ -286,7 +243,6 @@ with st.sidebar:
     try:
         st.image("https://github.com/RobRead84/blank-app/blob/main/Firehills-logo-h-dark-yellowdoctor.png?raw=true", width=250)
     except:
-        # Fallback to text if logo fails to load
         st.markdown("# 🌿 Furze")
     
     # Navigation
@@ -306,7 +262,7 @@ with st.sidebar:
     st.title("Developer Options")
     st.session_state["debug_mode"] = st.checkbox("Enable Debug Mode", value=st.session_state["debug_mode"])
 
-# Content for each page
+# Main content area
 if st.session_state["page"] == "Home":
     st.title("Furze from Firehills")
     st.write("""
@@ -323,48 +279,26 @@ if st.session_state["page"] == "Home":
     Explore what your future strategy could be, in a way you've never done it before.
     """)
 
-else:  # For all chat pages, use the same template with different endpoints
+else:  # Chat pages
     current_page = st.session_state["page"]
     
-    # Check if the current page is a valid chat page
     if current_page in API_ENDPOINTS:
         st.title(f"🌿 {current_page}")
         
-        # Display appropriate description based on the page
-        if current_page == "Furze AI":
-            st.write("""
-            Welcome to Furze. Furze is designed by Firehills as your AI assistant for Eco systems and trained on 
-            public organisational data and designed for exploring performance and growth. Explore and flourish!
-            """)
-        elif current_page == "Eco System Identification":
-            st.write("""
-            Systems thinking needs complex technology to create simple strategies for growth. 
-            This AI agent has been trained on Firehills Eco system IP framework and will explore the roles 
-            organisation play today. And some they don't. **Ensure that organisational data has been 
-            uploaded in advance to get the best results.**
-            """)
-        elif current_page == "Eco System + SWOT":
-            st.write("""
-            This AI Agent will build your Eco System mapping against roles, but go one step further and 
-            produce a SWOT related to their roles and them as an organisation. **Ensure that organisational 
-            data has been uploaded in advance to get the best results.**
-            """)
-        elif current_page == "Eco System + SWOT + Scenarios":
-            st.write("""
-            This AI Agent will build your Eco System mapping against roles, SWOT and also create scenarios for growth. 
-            Scenarios are build out on an organic, in-organic and creative basis. **Ensure that organisational 
-            data has been uploaded in advance to get the best results.**
-            """)
+        # Display page-specific descriptions
+        descriptions = {
+            "Furze AI": "Welcome to Furze. Furze is designed by Firehills as your AI assistant for Eco systems and trained on public organisational data and designed for exploring performance and growth. Explore and flourish!",
+            "Eco System Identification": "Systems thinking needs complex technology to create simple strategies for growth. This AI agent has been trained on Firehills Eco system IP framework and will explore the roles organisation play today. And some they don't. **Ensure that organisational data has been uploaded in advance to get the best results.**",
+            "Eco System + SWOT": "This AI Agent will build your Eco System mapping against roles, but go one step further and produce a SWOT related to their roles and them as an organisation. **Ensure that organisational data has been uploaded in advance to get the best results.**",
+            "Eco System + SWOT + Scenarios": "This AI Agent will build your Eco System mapping against roles, SWOT and also create scenarios for growth. Scenarios are build out on an organic, in-organic and creative basis. **Ensure that organisational data has been uploaded in advance to get the best results.**"
+        }
         
-        # Get the appropriate endpoint
-        endpoint = API_ENDPOINTS[current_page]
+        st.write(descriptions[current_page])
         
-        # Display chat messages from history
+        # Display chat history
         for message in st.session_state["messages"][current_page]:
             with st.chat_message(message["role"]):
                 if message["role"] == "assistant":
-                    if st.session_state["debug_mode"] and "|" in message["content"]:
-                        debug_table_detection(message["content"])
                     render_message_with_tables(message["content"])
                 else:
                     st.markdown(message["content"])
@@ -380,51 +314,46 @@ else:  # For all chat pages, use the same template with different endpoints
             
             # Display assistant response
             with st.chat_message("assistant"):
-                # Use spinner while waiting for the response
                 with st.spinner("Thinking..."):
-                    response_data = query_langflow_api(prompt, endpoint)
+                    response_data = query_langflow_api(prompt, API_ENDPOINTS[current_page])
                     
                     if "error" in response_data:
                         response_text = f"Sorry, I encountered an error: {response_data['error']}"
                     else:
-                        # Extract the message using our function
                         response_text = extract_message_from_response(response_data)
                     
-                    # Show debug info if enabled
-                    if st.session_state["debug_mode"] and "|" in response_text:
-                        debug_table_detection(response_text)
-                    
-                    # Display the response with proper table handling
+                    # Display the response with table handling
                     render_message_with_tables(response_text)
                     
                     # Add assistant response to chat history
                     st.session_state["messages"][current_page].append({"role": "assistant", "content": response_text})
 
-# Add debug section to help troubleshoot
-with st.expander("Debug Information (Expand to see)"):
-    st.write("Current Page:", st.session_state["page"])
-    st.write("Session State Keys:", list(st.session_state.keys()))
-    st.write("Messages Per Page:", {page: len(messages) for page, messages in st.session_state["messages"].items()})
-    if st.session_state["page"] in API_ENDPOINTS:
-        st.write("Current API Endpoint:", API_ENDPOINTS[st.session_state["page"]])
-        st.write("Connect Timeout:", CONNECT_TIMEOUT)
-        st.write("Read Timeout:", READ_TIMEOUT)
-    
-    # Add network troubleshooting button
-    if st.button("Test API Connection"):
-        endpoint = API_ENDPOINTS.get(st.session_state["page"], API_ENDPOINTS["Furze AI"])
-        st.write(f"Testing connection to: {endpoint}")
-        try:
-            test_response = requests.get(
-                endpoint.split("/api")[0], 
-                timeout=5,
-                allow_redirects=True
-            )
-            st.write(f"Status Code: {test_response.status_code}")
-            st.write(f"Response URL: {test_response.url}")
-            if test_response.url != endpoint.split("/api")[0]:
-                st.warning(f"Redirect detected! Original URL redirected to {test_response.url}")
-            else:
-                st.success("No redirects detected.")
-        except Exception as e:
-            st.error(f"Connection test failed: {str(e)}")
+# Debug section
+if st.session_state["debug_mode"]:
+    with st.expander("Debug Information"):
+        st.write("Current Page:", st.session_state["page"])
+        st.write("Session State Keys:", list(st.session_state.keys()))
+        st.write("Messages Per Page:", {page: len(messages) for page, messages in st.session_state["messages"].items()})
+        if st.session_state["page"] in API_ENDPOINTS:
+            st.write("Current API Endpoint:", API_ENDPOINTS[st.session_state["page"]])
+            st.write("Connect Timeout:", CONNECT_TIMEOUT)
+            st.write("Read Timeout:", READ_TIMEOUT)
+        
+        # API connection test
+        if st.button("Test API Connection"):
+            endpoint = API_ENDPOINTS.get(st.session_state["page"], API_ENDPOINTS["Furze AI"])
+            st.write(f"Testing connection to: {endpoint}")
+            try:
+                test_response = requests.get(
+                    endpoint.split("/api")[0], 
+                    timeout=5,
+                    allow_redirects=True
+                )
+                st.write(f"Status Code: {test_response.status_code}")
+                st.write(f"Response URL: {test_response.url}")
+                if test_response.url != endpoint.split("/api")[0]:
+                    st.warning(f"Redirect detected! Original URL redirected to {test_response.url}")
+                else:
+                    st.success("No redirects detected.")
+            except Exception as e:
+                st.error(f"Connection test failed: {str(e)}")
