@@ -3,6 +3,7 @@ import requests
 import json
 import re
 import pandas as pd
+from io import StringIO
 
 # Set page config and title
 st.set_page_config(page_title="Furze from Firehills", page_icon="🌿")
@@ -35,100 +36,92 @@ API_ENDPOINTS = {
 CONNECT_TIMEOUT = 10.0  # Connection timeout
 READ_TIMEOUT = 300.0    # Read timeout - increased to 5 minutes
 
-# Function to detect and parse markdown tables
-def parse_markdown_table(text):
+def display_message_with_tables(content):
     """
-    Parse markdown tables from text and return a list of DataFrames and remaining text parts
+    Display content with proper table rendering using unsafe_allow_html
     """
-    # Regex pattern to match markdown tables
-    table_pattern = r'\|.*?\|(?:\r?\n\|.*?\|)*'
-    
-    # Find all tables in the text
-    tables = re.findall(table_pattern, text, re.MULTILINE)
-    
-    if not tables:
-        return [(text, 'text')]
-    
-    # Split text by tables to preserve order
-    parts = []
-    remaining_text = text
-    
-    for table_text in tables:
-        # Split by this table
-        before, after = remaining_text.split(table_text, 1)
-        
-        # Add text before table if it exists
-        if before.strip():
-            parts.append((before.strip(), 'text'))
-        
-        # Parse the table
-        try:
-            df = parse_single_markdown_table(table_text)
-            if df is not None:
-                parts.append((df, 'table'))
-            else:
-                # If parsing fails, treat as text
-                parts.append((table_text, 'text'))
-        except:
-            # If parsing fails, treat as text
-            parts.append((table_text, 'text'))
-        
-        remaining_text = after
-    
-    # Add any remaining text
-    if remaining_text.strip():
-        parts.append((remaining_text.strip(), 'text'))
-    
-    return parts
+    # Enable markdown tables by allowing HTML
+    try:
+        # First, try to render with unsafe_allow_html to enable table support
+        st.markdown(content, unsafe_allow_html=True)
+    except:
+        # Fallback: manually parse and create tables
+        if "|" in content and "---" in content:
+            # Split content by lines
+            lines = content.split('\n')
+            current_text = []
+            table_lines = []
+            in_table = False
+            
+            for line in lines:
+                line = line.strip()
+                
+                # Check if this line looks like a table row
+                if line.startswith('|') and line.endswith('|') and line.count('|') >= 3:
+                    if not in_table:
+                        # Render any accumulated text first
+                        if current_text:
+                            st.markdown('\n'.join(current_text))
+                            current_text = []
+                        in_table = True
+                    table_lines.append(line)
+                elif line.startswith('|') and '---' in line:
+                    # This is a table separator line
+                    table_lines.append(line)
+                else:
+                    if in_table:
+                        # End of table, render it
+                        render_table_from_lines(table_lines)
+                        table_lines = []
+                        in_table = False
+                    
+                    if line:  # Only add non-empty lines
+                        current_text.append(line)
+            
+            # Handle any remaining content
+            if table_lines and in_table:
+                render_table_from_lines(table_lines)
+            elif current_text:
+                st.markdown('\n'.join(current_text))
+        else:
+            # No tables detected, render normally
+            st.markdown(content)
 
-def parse_single_markdown_table(table_text):
+def render_table_from_lines(table_lines):
     """
-    Parse a single markdown table string into a pandas DataFrame
+    Convert table lines to a proper Streamlit table
     """
     try:
-        lines = [line.strip() for line in table_text.strip().split('\n') if line.strip()]
+        if len(table_lines) < 3:  # Need at least header, separator, and one data row
+            st.markdown('\n'.join(table_lines))
+            return
         
-        if len(lines) < 2:
-            return None
+        # Extract header
+        header_line = table_lines[0]
+        headers = [col.strip() for col in header_line.split('|')[1:-1]]  # Remove first and last empty elements
         
-        # Extract headers (first line)
-        header_line = lines[0]
-        headers = [col.strip() for col in header_line.split('|') if col.strip()]
-        
-        # Skip separator line (second line with dashes)
-        data_lines = lines[2:] if len(lines) > 2 else []
+        # Skip separator line (contains ---)
+        data_lines = [line for line in table_lines[2:] if line and not '---' in line]
         
         # Extract data rows
         rows = []
         for line in data_lines:
             if '|' in line:
-                row = [col.strip() for col in line.split('|') if col.strip()]
-                if len(row) == len(headers):  # Only add rows with correct number of columns
-                    rows.append(row)
+                row_data = [col.strip() for col in line.split('|')[1:-1]]  # Remove first and last empty elements
+                if len(row_data) == len(headers):
+                    rows.append(row_data)
         
-        if not rows:
-            return None
-        
-        # Create DataFrame
-        df = pd.DataFrame(rows, columns=headers)
-        return df
-        
+        if rows:
+            # Create DataFrame and display
+            df = pd.DataFrame(rows, columns=headers)
+            st.dataframe(df, use_container_width=True)
+        else:
+            # Fallback to markdown if parsing fails
+            st.markdown('\n'.join(table_lines))
+            
     except Exception as e:
-        return None
-
-def render_content_with_tables(content):
-    """
-    Render content that may contain markdown tables
-    """
-    parts = parse_markdown_table(content)
-    
-    for part, part_type in parts:
-        if part_type == 'text':
-            # Render as regular markdown
-            st.markdown(part)
-        elif part_type == 'table':
-            # Render as Streamlit table
-            st.dataframe(part, use_container_width=True)
+        # If anything fails, just render as markdown
+        st.markdown('\n'.join(table_lines))
 
 # Sidebar for navigation
 with st.sidebar:
@@ -297,7 +290,7 @@ else:  # For all chat pages, use the same template with different endpoints
             with st.chat_message(message["role"]):
                 if message["role"] == "assistant":
                     # Use the new table rendering function for assistant messages
-                    render_content_with_tables(message["content"])
+                    display_message_with_tables(message["content"])
                 else:
                     # Regular markdown for user messages
                     st.markdown(message["content"])
@@ -325,7 +318,7 @@ else:  # For all chat pages, use the same template with different endpoints
                         response_text = extract_message_from_response(response_data)
                         
                         # Use the new table rendering function
-                        render_content_with_tables(response_text)
+                        display_message_with_tables(response_text)
                     
                     # Add assistant response to chat history
                     st.session_state["messages"][current_page].append({"role": "assistant", "content": response_text})
@@ -360,13 +353,20 @@ if st.session_state["debug_mode"]:
             except Exception as e:
                 st.error(f"Connection test failed: {str(e)}")
         
-        # Add table parsing test button
-        if st.button("Test Table Parsing"):
-            test_table = """| Role Type | Activities & Evidence | Revenue Generated (FY24) |
+        # Add table parsing test button - THIS IS THE MISSING BUTTON
+        if st.button("Test Table Parsing", key="test_table_parsing"):
+            st.write("**Testing table parsing with sample data:**")
+            test_table = """Here's some text before the table.
+
+| Role Type | Activities & Evidence | Revenue Generated (FY24) |
 |---------------------|--------------------------------------------------------------------------------------------------------|------------------------------------|
 | Keystone | Orchestrates value chain, controls IP, invests in ecosystem health | £494.7m (total) |
 | Licensor | Licenses IP for games, media, merchandise; strict brand control | £31.4m |
-| Platform Provider | Retail/online/event platforms, digital tools, community engagement | Retail: £62.0m, Online: £43.0m, Trade: £169.2m |"""
+| Platform Provider | Retail/online/event platforms, digital tools, community engagement | Retail: £62.0m, Online: £43.0m, Trade: £169.2m |
+
+And here's some text after the table."""
             
-            st.write("Testing table parsing with sample data:")
-            render_content_with_tables(test_table)
+            st.write("**Raw input:**")
+            st.code(test_table)
+            st.write("**Rendered output:**")
+            display_message_with_tables(test_table)
