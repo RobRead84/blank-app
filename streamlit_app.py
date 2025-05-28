@@ -1,6 +1,8 @@
 import streamlit as st
 import requests
 import json
+import pandas as pd
+import re
 
 # Set page config and title
 st.set_page_config(page_title="Furze from Firehills", page_icon="🌿")
@@ -28,6 +30,58 @@ API_ENDPOINTS = {
 # Increase these values to prevent timeouts with long-running API calls
 CONNECT_TIMEOUT = 10.0  # Connection timeout
 READ_TIMEOUT = 300.0    # Read timeout - increased to 5 minutes
+
+# Function to render markdown messages with proper table handling
+def render_message_with_tables(message_text):
+    # Regular expression to find markdown tables
+    table_pattern = r'(\*\*.*?\*\*)\s*\n\|(.*?)\|\n\|([-\s|]+)\|\n((?:\|.*?\|\n)+)'
+    
+    # Find all tables in the message
+    table_matches = re.findall(table_pattern, message_text, re.DOTALL)
+    
+    if not table_matches:
+        # If no tables found, just render the markdown normally
+        st.markdown(message_text)
+        return
+    
+    # Process the message with tables
+    last_end = 0
+    for match in table_matches:
+        # Get the full matched string to determine position
+        full_match = f"{match[0]}\n|{match[1]}|\n|{match[2]}|\n{match[3]}"
+        start_pos = message_text.find(full_match, last_end)
+        
+        # Display text before the table
+        if start_pos > last_end:
+            st.markdown(message_text[last_end:start_pos])
+        
+        # Display the table title
+        st.markdown(match[0])  # The title in bold
+        
+        # Extract headers
+        headers = [h.strip() for h in match[1].split('|') if h.strip()]
+        
+        # Extract rows
+        rows_text = match[3]
+        rows = []
+        for row_text in rows_text.strip().split('\n'):
+            # Skip separator rows
+            if not re.search(r'[A-Za-z0-9]', row_text):
+                continue
+            row = [cell.strip() for cell in row_text.split('|')[1:-1]]
+            rows.append(row)
+        
+        # Create and display DataFrame
+        if rows:
+            df = pd.DataFrame(rows, columns=headers)
+            st.dataframe(df, use_container_width=True)
+        
+        # Update last position
+        last_end = start_pos + len(full_match)
+    
+    # Display any remaining text after the last table
+    if last_end < len(message_text):
+        st.markdown(message_text[last_end:])
 
 # Sidebar for navigation
 with st.sidebar:
@@ -187,7 +241,10 @@ else:  # For all chat pages, use the same template with different endpoints
         # Display chat messages from history
         for message in st.session_state["messages"][current_page]:
             with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+                if message["role"] == "assistant":
+                    render_message_with_tables(message["content"])
+                else:
+                    st.markdown(message["content"])
         
         # Chat input
         if prompt := st.chat_input("What would you like to ask?"):
@@ -210,8 +267,8 @@ else:  # For all chat pages, use the same template with different endpoints
                         # Extract the message using our function
                         response_text = extract_message_from_response(response_data)
                     
-                    # Display the complete response at once
-                    st.markdown(response_text)
+                    # Display the response with proper table handling
+                    render_message_with_tables(response_text)
                     
                     # Add assistant response to chat history
                     st.session_state["messages"][current_page].append({"role": "assistant", "content": response_text})
