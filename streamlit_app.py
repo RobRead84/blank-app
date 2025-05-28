@@ -9,19 +9,23 @@ st.set_page_config(page_title="Furze from Firehills", page_icon="🌿")
 if "page" not in st.session_state:
     st.session_state["page"] = "Home"
 
+# Initialize debug mode in session state
+if "debug_mode" not in st.session_state:
+    st.session_state["debug_mode"] = False
+
 # Initialize chat history in session state if it doesn't exist
 if "messages" not in st.session_state:
     st.session_state["messages"] = {}
-    for page in ["Furze AI", "Eco System Identification", "Eco System + SWOT", "Eco System + SWOT + Scenarios"]:
+    for page in ["Furze", "Eco System Identification", "SWOT Generation", "Growth Scenarios"]:
         st.session_state["messages"][page] = []
 
 # Updated API endpoints for different chat modules with increased timeout parameters.
 # Using the web-server urls instead of CloudFront URLs
 API_ENDPOINTS = {
-    "Furze AI": "https://web-server-5a231649.fctl.app/api/v1/run/55de672f-c877-4541-8890-2554b2e810a8",
+    "Furze": "https://web-server-5a231649.fctl.app/api/v1/run/55de672f-c877-4541-8890-2554b2e810a8",
     "Eco System Identification": "https://web-server-5a231649.fctl.app/api/v1/run/9da63433-bb7b-4f41-a5e5-89d025345030",
-    "Eco System + SWOT": "https://web-server-5a231649.fctl.app/api/v1/run/11c72c82-1c0f-44fa-b4a9-a6ac8d8d6d9c",
-    "Eco System + SWOT + Scenarios": "https://web-server-5a231649.fctl.app/api/v1/run/5c8064c7-a886-48e2-b914-3a1f5603ed6f"
+    "SWOT Generation": "https://web-server-5a231649.fctl.app/api/v1/run/11c72c82-1c0f-44fa-b4a9-a6ac8d8d6d9c",
+    "Growth Scenarios": "https://web-server-5a231649.fctl.app/api/v1/run/5c8064c7-a886-48e2-b914-3a1f5603ed6f"
 }
 
 # Request timeout settings (in seconds)
@@ -40,9 +44,17 @@ with st.sidebar:
     
     # Navigation
     st.title("Navigation")
-    for page in ["Home", "Furze AI", "Eco System Identification", "Eco System + SWOT", "Eco System + SWOT + Scenarios"]:
+    for page in ["Home", "Furze", "Eco System Identification", "SWOT Generation", "Growth Scenarios"]:
         if st.button(page, key=f"nav_{page}"):
             st.session_state["page"] = page
+    
+    # Debug toggle button
+    st.title("Settings")
+    if st.button("Toggle Debug Mode"):
+        st.session_state["debug_mode"] = not st.session_state["debug_mode"]
+    
+    debug_status = "Enabled" if st.session_state["debug_mode"] else "Disabled"
+    st.write(f"Debug Mode: {debug_status}")
     
     # About section
     st.title("About")
@@ -156,7 +168,7 @@ else:  # For all chat pages, use the same template with different endpoints
         st.title(f"🌿 {current_page}")
         
         # Display appropriate description based on the page
-        if current_page == "Furze AI":
+        if current_page == "Furze":
             st.write("""
             Welcome to Furze. Furze is designed by Firehills as your AI assistant for Eco systems and trained on 
             public organisational data and designed for exploring performance and growth. Explore and flourish!
@@ -168,13 +180,13 @@ else:  # For all chat pages, use the same template with different endpoints
             organisation play today. And some they don't. **Ensure that organisational data has been 
             uploaded in advance to get the best results.**
             """)
-        elif current_page == "Eco System + SWOT":
+        elif current_page == "SWOT Generation":
             st.write("""
             This AI Agent will build your Eco System mapping against roles, but go one step further and 
             produce a SWOT related to their roles and them as an organisation. **Ensure that organisational 
             data has been uploaded in advance to get the best results.**
             """)
-        elif current_page == "Eco System + SWOT + Scenarios":
+        elif current_page == "Growth Scenarios":
             st.write("""
             This AI Agent will build your Eco System mapping against roles, SWOT and also create scenarios for growth. 
             Scenarios are build out on an organic, in-organic and creative basis. **Ensure that organisational 
@@ -216,31 +228,32 @@ else:  # For all chat pages, use the same template with different endpoints
                     # Add assistant response to chat history
                     st.session_state["messages"][current_page].append({"role": "assistant", "content": response_text})
 
-# Add debug section to help troubleshoot
-with st.expander("Debug Information (Expand to see)"):
-    st.write("Current Page:", st.session_state["page"])
-    st.write("Session State Keys:", list(st.session_state.keys()))
-    st.write("Messages Per Page:", {page: len(messages) for page, messages in st.session_state["messages"].items()})
-    if st.session_state["page"] in API_ENDPOINTS:
-        st.write("Current API Endpoint:", API_ENDPOINTS[st.session_state["page"]])
-        st.write("Connect Timeout:", CONNECT_TIMEOUT)
-        st.write("Read Timeout:", READ_TIMEOUT)
-    
-    # Add network troubleshooting button
-    if st.button("Test API Connection"):
-        endpoint = API_ENDPOINTS.get(st.session_state["page"], API_ENDPOINTS["Furze AI"])
-        st.write(f"Testing connection to: {endpoint}")
-        try:
-            test_response = requests.get(
-                endpoint.split("/api")[0], 
-                timeout=5,
-                allow_redirects=True
-            )
-            st.write(f"Status Code: {test_response.status_code}")
-            st.write(f"Response URL: {test_response.url}")
-            if test_response.url != endpoint.split("/api")[0]:
-                st.warning(f"Redirect detected! Original URL redirected to {test_response.url}")
-            else:
-                st.success("No redirects detected.")
-        except Exception as e:
-            st.error(f"Connection test failed: {str(e)}")
+# Add debug section only if debug mode is enabled
+if st.session_state["debug_mode"]:
+    with st.expander("Debug Information (Expand to see)"):
+        st.write("Current Page:", st.session_state["page"])
+        st.write("Session State Keys:", list(st.session_state.keys()))
+        st.write("Messages Per Page:", {page: len(messages) for page, messages in st.session_state["messages"].items()})
+        if st.session_state["page"] in API_ENDPOINTS:
+            st.write("Current API Endpoint:", API_ENDPOINTS[st.session_state["page"]])
+            st.write("Connect Timeout:", CONNECT_TIMEOUT)
+            st.write("Read Timeout:", READ_TIMEOUT)
+        
+        # Add network troubleshooting button
+        if st.button("Test API Connection"):
+            endpoint = API_ENDPOINTS.get(st.session_state["page"], API_ENDPOINTS["Furze"])
+            st.write(f"Testing connection to: {endpoint}")
+            try:
+                test_response = requests.get(
+                    endpoint.split("/api")[0], 
+                    timeout=5,
+                    allow_redirects=True
+                )
+                st.write(f"Status Code: {test_response.status_code}")
+                st.write(f"Response URL: {test_response.url}")
+                if test_response.url != endpoint.split("/api")[0]:
+                    st.warning(f"Redirect detected! Original URL redirected to {test_response.url}")
+                else:
+                    st.success("No redirects detected.")
+            except Exception as e:
+                st.error(f"Connection test failed: {str(e)}")
