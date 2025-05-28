@@ -60,6 +60,31 @@ def debug_table_detection(message_text):
         st.write("### Raw table sample:")
         st.code(message_text[start_idx:end_idx])
 
+# Convert markdown table to pandas DataFrame
+def markdown_table_to_df(table_text):
+    # Split the table into rows
+    rows = [row.strip() for row in table_text.split('\n') if row.strip().startswith('|') and row.strip().endswith('|')]
+    
+    if len(rows) < 2:  # Need at least header and separator
+        return None
+    
+    # Extract header cells (first row)
+    header = rows[0]
+    header_cells = [cell.strip() for cell in header.split('|') if cell.strip()]
+    
+    # Skip the separator row (second row)
+    
+    # Process data rows (third row onwards)
+    data = []
+    for row in rows[2:]:
+        cells = [cell.strip() for cell in row.split('|') if cell.strip()]
+        if len(cells) == len(header_cells):  # Ensure row has same number of cells as header
+            data.append(cells)
+    
+    # Create DataFrame
+    df = pd.DataFrame(data, columns=header_cells)
+    return df
+
 # Improved rendering function that preserves all text and formats tables correctly
 def render_message_with_tables(message_text):
     # If there are no pipes, it's definitely not a table
@@ -68,117 +93,118 @@ def render_message_with_tables(message_text):
         return
     
     try:
-        # Look for tables with a specific pattern
+        # Add custom CSS for table styling
+        st.markdown("""
+        <style>
+        .markdown-table-wrapper {
+            overflow-x: auto;
+            margin: 1em 0;
+        }
+        .markdown-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
+        }
+        .markdown-table thead tr {
+            background-color: #009879;
+            color: white;
+            text-align: left;
+        }
+        .markdown-table th,
+        .markdown-table td {
+            padding: 12px 15px;
+            border: 1px solid #dddddd;
+        }
+        .markdown-table tbody tr {
+            border-bottom: 1px solid #dddddd;
+        }
+        .markdown-table tbody tr:nth-of-type(even) {
+            background-color: #f3f3f3;
+        }
+        .markdown-table tbody tr:last-of-type {
+            border-bottom: 2px solid #009879;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Split the message into parts based on the presence of markdown tables
+        # Look for the pattern of a table: lines starting with | and containing | characters
         table_pattern = r'(\*\*.*?\*\*\s*\n)?\s*(\|.*?\|.*?\n\|[-:\s|]+\|.*?\n(?:\|.*?\|.*?\n)+)'
         
-        # Find all matches
-        matches = re.finditer(table_pattern, message_text, flags=re.DOTALL)
+        # Find all tables in the text
+        table_matches = list(re.finditer(table_pattern, message_text, re.DOTALL))
         
-        # Keep track of the last position we processed
+        if not table_matches:
+            # No tables found, just render the whole message as markdown
+            st.markdown(message_text)
+            return
+        
+        # Process the message with tables
         last_end = 0
         
-        # Process each table found
-        for match in matches:
+        for match in table_matches:
             start, end = match.span()
-            table_text = match.group(0)
             
-            # Display any text before the table
+            # Render any text before this table
             if start > last_end:
                 st.markdown(message_text[last_end:start])
             
-            # Check if there's a title in the table
-            title_match = re.search(r'\*\*(.*?)\*\*', table_text)
-            if title_match:
-                title = title_match.group(1)
+            # Get the table section
+            table_section = match.group(0)
+            
+            # Check if there's a title
+            title_match = re.search(r'\*\*(.*?)\*\*', table_section)
+            title = title_match.group(1) if title_match else None
+            
+            if title:
                 st.markdown(f"**{title}**")
-                # Remove the title from table_text to avoid duplicating it
-                table_text = re.sub(r'\*\*.*?\*\*\s*\n', '', table_text, count=1)
+                # Remove the title from table_section to avoid duplication
+                table_section = re.sub(r'\*\*.*?\*\*\s*\n', '', table_section, 1)
             
-            # Process the table rows
-            rows = [row.strip() for row in table_text.split('\n') if row.strip().startswith('|') and row.strip().endswith('|')]
+            # Extract just the table portion
+            table_rows = [row for row in table_section.split('\n') if row.strip().startswith('|') and row.strip().endswith('|')]
             
-            if len(rows) >= 2:  # Need at least header and separator row
-                # Extract header cells
-                header_cells = [cell.strip() for cell in rows[0].split('|') if cell.strip()]
+            if len(table_rows) >= 2:  # Need at least header and separator
+                # Convert the markdown table to HTML
+                table_html = '<div class="markdown-table-wrapper"><table class="markdown-table">\n'
                 
-                # Extract data rows (skip header and separator)
-                data_rows = []
-                for row in rows[2:]:  # Skip header and separator
+                # Add table header
+                header_cells = [cell.strip() for cell in table_rows[0].split('|') if cell.strip()]
+                table_html += '<thead>\n<tr>\n'
+                for cell in header_cells:
+                    table_html += f'<th>{cell}</th>\n'
+                table_html += '</tr>\n</thead>\n'
+                
+                # Add table body
+                table_html += '<tbody>\n'
+                for row in table_rows[2:]:  # Skip header and separator rows
                     cells = [cell.strip() for cell in row.split('|') if cell.strip()]
                     if cells:
-                        data_rows.append(cells)
+                        table_html += '<tr>\n'
+                        for cell in cells:
+                            table_html += f'<td>{cell}</td>\n'
+                        table_html += '</tr>\n'
+                table_html += '</tbody>\n'
                 
-                # Create HTML table with better styling
-                html_table = """
-                <style>
-                table.furze-table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin: 10px 0;
-                    font-size: 0.9em;
-                    border-radius: 5px;
-                    overflow: hidden;
-                    box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
-                }
-                table.furze-table thead tr {
-                    background-color: #009879;
-                    color: #ffffff;
-                    text-align: left;
-                    font-weight: bold;
-                }
-                table.furze-table th,
-                table.furze-table td {
-                    padding: 12px 15px;
-                    border: 1px solid #dddddd;
-                }
-                table.furze-table tbody tr {
-                    border-bottom: 1px solid #dddddd;
-                }
-                table.furze-table tbody tr:nth-of-type(even) {
-                    background-color: #f3f3f3;
-                }
-                table.furze-table tbody tr:last-of-type {
-                    border-bottom: 2px solid #009879;
-                }
-                </style>
-                <table class="furze-table">
-                """
-                
-                # Add header
-                html_table += "<thead>\n<tr>\n"
-                for cell in header_cells:
-                    html_table += f"<th>{cell}</th>\n"
-                html_table += "</tr>\n</thead>\n"
-                
-                # Add body
-                html_table += "<tbody>\n"
-                for row in data_rows:
-                    html_table += "<tr>\n"
-                    # Make sure we don't exceed the number of header cells
-                    for i, cell in enumerate(row):
-                        if i < len(header_cells):
-                            html_table += f"<td>{cell}</td>\n"
-                    html_table += "</tr>\n"
-                html_table += "</tbody>\n"
-                
-                html_table += "</table>"
+                table_html += '</table></div>'
                 
                 # Display the HTML table
-                st.markdown(html_table, unsafe_allow_html=True)
+                st.markdown(table_html, unsafe_allow_html=True)
             else:
-                # Not enough rows for a valid table, just display as markdown
-                st.markdown(table_text)
+                # Not enough rows for a valid table, just render as markdown
+                st.markdown(table_section)
             
-            # Update the last_end position for the next iteration
             last_end = end
         
-        # Display any remaining text after the last table
+        # Render any text after the last table
         if last_end < len(message_text):
             st.markdown(message_text[last_end:])
-    
+            
     except Exception as e:
         if st.session_state["debug_mode"]:
             st.error(f"Error rendering table: {str(e)}")
+            st.error(f"Table processing failed. Falling back to standard markdown.")
         # Fallback to regular markdown rendering
         st.markdown(message_text)
 
