@@ -20,7 +20,7 @@ if "messages" not in st.session_state:
 API_ENDPOINTS = {
     "Furze AI": "https://web-server-5a231649.fctl.app/api/v1/run/55de672f-c877-4541-8890-2554b2e810a8",
     "Eco System Identification": "https://web-server-5a231649.fctl.app/api/v1/run/9da63433-bb7b-4f41-a5e5-89d025345030",
-    "Eco System + SWOT": "https://web-server-5a231649.fctl.app/api/v1/run/82dbd031-ae3b-46fb-b6d0-82fec50ac844",
+    "Eco System + SWOT": "https://web-server-5a231649.fctl.app/api/v1/run/11c72c82-1c0f-44fa-b4a9-a6ac8d8d6d9c",
     "Eco System + SWOT + Scenarios": "https://web-server-5a231649.fctl.app/api/v1/run/b362ee31-f35a-4f72-8751-7c38dad04625"
 }
 
