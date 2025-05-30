@@ -32,7 +32,7 @@ API_ENDPOINTS = {
     "Furze": "https://web-server-5a231649.fctl.app/api/v1/run/fde83153-c067-40fa-88cc-d74eeddf19e4",
     "Eco System Identification": "https://web-server-5a231649.fctl.app/api/v1/run/d4d6f122-57f0-4485-a6ad-90ea47bd777a",
     "SWOT Generation": "https://web-server-5a231649.fctl.app/api/v1/run/1793ecf9-2736-44a1-88a0-f5e0bf999755",
-    "Growth Scenarios": "https://web-server-5a231649.fctl.app/api/v1/run/ce7a8949-ae35-4734-a243-48922c64bc1b"
+    "Growth Scenarios": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/ce7a8949-ae35-4734-a243-48922c64bc1b"
 }
 
 # Request timeout settings (in seconds)
