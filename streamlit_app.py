@@ -31,7 +31,7 @@ if "processing" not in st.session_state:
 API_ENDPOINTS = {
     "Furze": "https://web-server-5a231649.fctl.app/api/v1/run/fde83153-c067-40fa-88cc-d74eeddf19e4",
     "Eco System Identification": "https://web-server-5a231649.fctl.app/api/v1/run/d4d6f122-57f0-4485-a6ad-90ea47bd777a",
-    "SWOT Generation": "https://web-server-5a231649.fctl.app/api/v1/run/01597cbd-f146-451a-b5ab-fe8bfa3d0aec",
+    "SWOT Generation": "https://d186xcf3hom0xy.cloudfront.net/api/v1/run/1793ecf9-2736-44a1-88a0-f5e0bf999755",
     "Growth Scenarios": "https://web-server-5a231649.fctl.app/api/v1/run/15540318-f363-4624-b3f8-41c55c482c78"
 }
 
