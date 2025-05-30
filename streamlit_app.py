@@ -29,7 +29,7 @@ if "processing" not in st.session_state:
 # Updated API endpoints for different chat modules with increased timeout parameters.
 # Using the web-server urls instead of CloudFront URLs
 API_ENDPOINTS = {
-    "Furze": "https://web-server-5a231649.fctl.app/api/v1/run/55de672f-c877-4541-8890-2554b2e810a8",
+    "Furze": "https://web-server-5a231649.fctl.app/api/v1/run/6e4679fb-0242-408b-837e-ac13e315eb08",
     "Eco System Identification": "https://web-server-5a231649.fctl.app/api/v1/run/9da63433-bb7b-4f41-a5e5-89d025345030",
     "SWOT Generation": "https://web-server-5a231649.fctl.app/api/v1/run/11c72c82-1c0f-44fa-b4a9-a6ac8d8d6d9c",
     "Growth Scenarios": "https://web-server-5a231649.fctl.app/api/v1/run/5c8064c7-a886-48e2-b914-3a1f5603ed6f"
