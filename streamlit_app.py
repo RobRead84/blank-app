@@ -8,6 +8,89 @@ from io import StringIO
 # Set page config and title
 st.set_page_config(page_title="Furze from Firehills", page_icon="🌿")
 
+# Custom CSS for web-style menu
+st.markdown("""
+<style>
+    /* Hide the default button styling */
+    .stButton > button {
+        background: none !important;
+        border: none !important;
+        padding: 8px 16px !important;
+        color: inherit !important;
+        text-decoration: none !important;
+        cursor: pointer !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        width: 100% !important;
+        text-align: left !important;
+        font-weight: normal !important;
+        font-size: 1rem !important;
+        transition: all 0.2s ease !important;
+    }
+    
+    /* Hover effect for menu items */
+    .stButton > button:hover {
+        background-color: rgba(255, 255, 255, 0.1) !important;
+        color: #ff6b6b !important;
+        transform: translateX(4px) !important;
+    }
+    
+    /* Active/selected page styling */
+    .stButton > button:focus {
+        background-color: rgba(255, 255, 255, 0.1) !important;
+        color: #ff6b6b !important;
+        box-shadow: none !important;
+    }
+    
+    /* Navigation section styling */
+    .nav-section {
+        margin-bottom: 2rem;
+    }
+    
+    /* Menu item styling */
+    .menu-item {
+        padding: 0.5rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .menu-item:last-child {
+        border-bottom: none;
+    }
+    
+    /* Current page indicator */
+    .current-page {
+        color: #ff6b6b !important;
+        font-weight: 500 !important;
+        position: relative;
+    }
+    
+    .current-page::before {
+        content: "▶ ";
+        color: #ff6b6b;
+    }
+    
+    /* Settings section */
+    .settings-section {
+        margin-top: 2rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    /* Debug toggle styling */
+    .debug-toggle {
+        font-size: 0.9rem !important;
+        opacity: 0.8;
+    }
+    
+    /* About section styling */
+    .about-section {
+        margin-top: 2rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Initialize session state for navigation
 if "page" not in st.session_state:
     st.session_state["page"] = "Home"
@@ -199,27 +282,54 @@ with st.sidebar:
         # Fallback to text if logo fails to load
         st.markdown("# 🌿 Furze")
     
-    # Navigation
-    st.title("Navigation")
-    for page in ["Home", "Furze", "Eco System Identification", "SWOT Generation", "Growth Scenarios"]:
-        if st.button(page, key=f"nav_{page}"):
-            st.session_state["page"] = page
-            st.session_state["processing"] = False  # Reset processing flag when changing pages
+    # Navigation with custom styling
+    st.markdown('<div class="nav-section">', unsafe_allow_html=True)
+    st.markdown("### Navigation")
     
-    # Debug toggle button
-    st.title("Settings")
-    if st.button("Toggle Debug Mode"):
+    pages = ["Home", "Furze", "Eco System Identification", "SWOT Generation", "Growth Scenarios"]
+    
+    for page in pages:
+        # Check if this is the current page
+        is_current = st.session_state["page"] == page
+        
+        # Create a container for each menu item
+        st.markdown('<div class="menu-item">', unsafe_allow_html=True)
+        
+        # Add current page indicator
+        if is_current:
+            st.markdown(f'<div class="current-page">{page}</div>', unsafe_allow_html=True)
+        else:
+            if st.button(page, key=f"nav_{page}"):
+                st.session_state["page"] = page
+                st.session_state["processing"] = False  # Reset processing flag when changing pages
+                st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Settings section with improved styling
+    st.markdown('<div class="settings-section">', unsafe_allow_html=True)
+    st.markdown("### Settings")
+    
+    # Debug toggle with better styling
+    debug_label = "🔧 Disable Debug" if st.session_state["debug_mode"] else "🔧 Enable Debug"
+    if st.button(debug_label, key="debug_toggle"):
         st.session_state["debug_mode"] = not st.session_state["debug_mode"]
+        st.rerun()
     
-    debug_status = "Enabled" if st.session_state["debug_mode"] else "Disabled"
-    st.write(f"Debug Mode: {debug_status}")
+    debug_status = "✅ Enabled" if st.session_state["debug_mode"] else "❌ Disabled"
+    st.markdown(f"*Debug Mode: {debug_status}*")
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # About section
-    st.title("About")
+    st.markdown('<div class="about-section">', unsafe_allow_html=True)
+    st.markdown("### About")
     st.info(
         "This is the interface for Furze from Firehills. "
         "Select a page from the navigation above to get started."
     )
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # Function to extract message from LangFlow response
 def extract_message_from_response(response_data):
@@ -432,7 +542,7 @@ if st.session_state["debug_mode"]:
             except Exception as e:
                 st.error(f"Connection test failed: {str(e)}")
         
-        # Add table parsing test button - THIS IS THE MISSING BUTTON
+        # Add table parsing test button
         if st.button("Test Table Parsing", key="test_table_parsing"):
             st.write("**Testing table parsing with sample data:**")
             test_table = """Here's some text before the table.
