@@ -4,6 +4,11 @@ import json
 import re
 import pandas as pd
 from io import StringIO
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Set page config and title
 st.set_page_config(page_title="Furze from Firehills", page_icon="🌿")
@@ -26,19 +31,68 @@ if "messages" not in st.session_state:
 if "processing" not in st.session_state:
     st.session_state["processing"] = False
 
-# Updated API endpoints for different chat modules with increased timeout parameters.
-# Using the web-server urls instead of CloudFront URLs
-API_ENDPOINTS = {
-    "Furze": "https://web-server-5a231649.fctl.app/api/v1/run/fde83153-c067-40fa-88cc-d74eeddf19e4",
-    "Eco System Identification": "https://web-server-5a231649.fctl.app/api/v1/run/d4d6f122-57f0-4485-a6ad-90ea47bd777a",
-    "SWOT Generation": "https://web-server-5a231649.fctl.app/api/v1/run/1793ecf9-2736-44a1-88a0-f5e0bf999755",
-    "Growth Scenarios": "https://web-server-5a231649.fctl.app/api/v1/run/ce7a8949-ae35-4734-a243-48922c64bc1b"
-}
+# Function to safely get API configuration
+def get_api_config():
+    """
+    Safely retrieve API configuration from secrets or fallback to defaults.
+    Returns None if configuration is missing.
+    """
+    try:
+        # Try to get endpoints from secrets
+        if "api" in st.secrets and "endpoints" in st.secrets["api"]:
+            endpoints = dict(st.secrets["api"]["endpoints"])
+            
+            # Get timeouts from secrets or use defaults
+            timeouts = {
+                "connect": st.secrets.get("api", {}).get("timeouts", {}).get("connect", 10.0),
+                "read": st.secrets.get("api", {}).get("timeouts", {}).get("read", 300.0)
+            }
+            
+            # Get optional API key
+            api_key = st.secrets.get("api", {}).get("auth", {}).get("key", None)
+            
+            return {
+                "endpoints": endpoints,
+                "timeouts": timeouts,
+                "api_key": api_key
+            }
+        else:
+            logger.error("API configuration not found in secrets")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error loading API configuration: {str(e)}")
+        return None
 
-# Request timeout settings (in seconds)
-# Increase these values to prevent timeouts with long-running API calls
-CONNECT_TIMEOUT = 10.0  # Connection timeout
-READ_TIMEOUT = 300.0    # Read timeout - increased to 5 minutes
+# Load API configuration
+api_config = get_api_config()
+
+# Check if API configuration is available
+if api_config is None:
+    st.error("""
+    ⚠️ **Configuration Error**
+    
+    The application is not properly configured. API endpoints are missing.
+    
+    If you're the application owner, please configure the API endpoints in the Streamlit secrets management.
+    
+    If you're a user, please contact the application administrator.
+    """)
+    st.stop()
+
+# Extract configuration
+API_ENDPOINTS = api_config["endpoints"]
+CONNECT_TIMEOUT = api_config["timeouts"]["connect"]
+READ_TIMEOUT = api_config["timeouts"]["read"]
+API_KEY = api_config["api_key"]
+
+# Validate that all required endpoints are present
+required_pages = ["Furze", "Eco System Identification", "SWOT Generation", "Growth Scenarios"]
+missing_endpoints = [page for page in required_pages if page not in API_ENDPOINTS]
+
+if missing_endpoints:
+    st.error(f"Missing API endpoints for: {', '.join(missing_endpoints)}")
+    st.stop()
 
 def display_message_with_tables(content):
     """
@@ -262,6 +316,11 @@ def query_langflow_api(user_input, endpoint):
         "Connection": "keep-alive"
     }
     
+    # Add API key to headers if available
+    if API_KEY:
+        headers["X-API-Key"] = API_KEY
+        headers["Authorization"] = f"Bearer {API_KEY}"
+    
     try:
         # Make the request with explicit timeouts to prevent 504 errors
         response = requests.post(
@@ -293,13 +352,17 @@ def query_langflow_api(user_input, endpoint):
         return full_response
             
     except requests.exceptions.Timeout as e:
-        return {"error": f"API Request Timeout: The server is taking too long to respond. This might be due to a complex query or server load. Details: {e}"}
+        logger.error(f"API timeout error: {e}")
+        return {"error": f"API Request Timeout: The server is taking too long to respond. This might be due to a complex query or server load."}
     except requests.exceptions.RequestException as e:
-        return {"error": f"API Request Error: {e}"}
+        logger.error(f"API request error: {e}")
+        return {"error": f"API Request Error: Unable to connect to the service. Please try again later."}
     except ValueError as e:
-        return {"error": f"Response Parsing Error: {e}"}
+        logger.error(f"Response parsing error: {e}")
+        return {"error": f"Response Parsing Error: Invalid response from server."}
     except Exception as e:
-        return {"error": f"Unexpected Error: {e}"}
+        logger.error(f"Unexpected error: {e}")
+        return {"error": f"An unexpected error occurred. Please try again."}
 
 # Content for each page
 if st.session_state["page"] == "Home":
@@ -408,31 +471,44 @@ if st.session_state["debug_mode"]:
         st.write("Session State Keys:", list(st.session_state.keys()))
         st.write("Messages Per Page:", {page: len(messages) for page, messages in st.session_state["messages"].items()})
         st.write("Processing Flag:", st.session_state.get("processing", False))
+        
+        # Show configuration status
+        st.write("**Configuration Status:**")
+        if api_config:
+            st.success("✅ API configuration loaded successfully")
+            st.write(f"- Endpoints configured: {len(API_ENDPOINTS)}")
+            st.write(f"- Connect timeout: {CONNECT_TIMEOUT}s")
+            st.write(f"- Read timeout: {READ_TIMEOUT}s")
+            st.write(f"- API Key configured: {'Yes' if API_KEY else 'No'}")
+        else:
+            st.error("❌ API configuration not loaded")
+        
         if st.session_state["page"] in API_ENDPOINTS:
-            st.write("Current API Endpoint:", API_ENDPOINTS[st.session_state["page"]])
-            st.write("Connect Timeout:", CONNECT_TIMEOUT)
-            st.write("Read Timeout:", READ_TIMEOUT)
+            # Don't show the actual endpoint in production
+            st.write(f"Current endpoint configured: Yes")
         
         # Add network troubleshooting button
         if st.button("Test API Connection"):
-            endpoint = API_ENDPOINTS.get(st.session_state["page"], API_ENDPOINTS["Furze"])
-            st.write(f"Testing connection to: {endpoint}")
-            try:
-                test_response = requests.get(
-                    endpoint.split("/api")[0], 
-                    timeout=5,
-                    allow_redirects=True
-                )
-                st.write(f"Status Code: {test_response.status_code}")
-                st.write(f"Response URL: {test_response.url}")
-                if test_response.url != endpoint.split("/api")[0]:
-                    st.warning(f"Redirect detected! Original URL redirected to {test_response.url}")
-                else:
-                    st.success("No redirects detected.")
-            except Exception as e:
-                st.error(f"Connection test failed: {str(e)}")
+            if st.session_state["page"] in API_ENDPOINTS:
+                endpoint = API_ENDPOINTS[st.session_state["page"]]
+                st.write(f"Testing connection to API...")
+                try:
+                    test_response = requests.get(
+                        endpoint.split("/api")[0], 
+                        timeout=5,
+                        allow_redirects=True
+                    )
+                    st.write(f"Status Code: {test_response.status_code}")
+                    if test_response.status_code == 200:
+                        st.success("Connection successful!")
+                    else:
+                        st.warning(f"Unexpected status code: {test_response.status_code}")
+                except Exception as e:
+                    st.error(f"Connection test failed: {str(e)}")
+            else:
+                st.warning("No endpoint configured for current page")
         
-        # Add table parsing test button - THIS IS THE MISSING BUTTON
+        # Add table parsing test button
         if st.button("Test Table Parsing", key="test_table_parsing"):
             st.write("**Testing table parsing with sample data:**")
             test_table = """Here's some text before the table.
@@ -449,25 +525,6 @@ And here's some text after the table."""
             st.code(test_table)
             st.write("**Rendered output:**")
             display_message_with_tables(test_table)
-        
-        # Test with actual API response format
-        if st.button("Test API Format", key="test_api_format"):
-            st.write("**Testing with actual API response format:**")
-            api_test = """Here is a concise summary table for Games Workshop plc (GW):
-
-| Category | Details |
-|----------------------------|---------------------------------------------------------------------------------------------------|
-| **Headquarters** | Nottingham, UK |
-| **Founded** | 1975 |
-| **Business Model** | Design, manufacture, retail of miniature wargames |
-| **Key Products** | Warhammer 40,000, Age of Sigmar, paints, books |
-
-This format should render as a proper table."""
-            
-            st.write("**Raw input:**")
-            st.code(api_test)
-            st.write("**Rendered output:**")
-            display_message_with_tables(api_test)
         
         # Add version and environment info
         st.write("**Environment Information:**")
