@@ -5,6 +5,7 @@ import re
 import pandas as pd
 from io import StringIO
 import logging
+from security_utils import InputValidator, RateLimiter, SessionManager, SecurityLogger
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -12,6 +13,24 @@ logger = logging.getLogger(__name__)
 
 # Set page config and title
 st.set_page_config(page_title="Furze from Firehills", page_icon="🌿")
+
+# Initialize session security
+SessionManager.initialize_session()
+
+# Check session timeout
+if SessionManager.check_session_timeout():
+    st.warning("Your session has expired. Please refresh the page to continue.")
+    SessionManager.clear_session()
+    st.stop()
+
+# Update activity timestamp
+SessionManager.update_activity()
+
+# Initialize rate limiter
+if "rate_limiter" not in st.session_state:
+    # Configure rate limiting based on environment
+    max_requests = st.secrets.get("security", {}).get("max_requests_per_minute", 20)
+    st.session_state["rate_limiter"] = RateLimiter(max_requests=max_requests, window_minutes=1)
 
 # Initialize session state for navigation
 if "page" not in st.session_state:
@@ -303,10 +322,25 @@ def extract_message_from_response(response_data):
 
 # Function to query LangFlow API and return full response
 def query_langflow_api(user_input, endpoint):
+    # Check rate limiting
+    if not st.session_state["rate_limiter"].is_allowed():
+        wait_time = st.session_state["rate_limiter"].get_wait_time()
+        SecurityLogger.log_error("rate_limit_exceeded")
+        return {"error": f"Too many requests. Please wait {wait_time} seconds before trying again."}
+    
+    # Validate input
+    is_valid, error_msg = InputValidator.validate_input(user_input)
+    if not is_valid:
+        SecurityLogger.log_error("input_validation_failed", error_msg)
+        return {"error": error_msg}
+    
+    # Sanitize input
+    sanitized_input = InputValidator.sanitize_input(user_input)
     payload = {
-        "input_value": user_input,
+        "input_value": sanitized_input,  # Use sanitized input
         "output_type": "chat",
-        "input_type": "chat"
+        "input_type": "chat",
+        "session_token": st.session_state.get("session_token", "")  # Add session token
     }
     
     headers = {
@@ -352,17 +386,17 @@ def query_langflow_api(user_input, endpoint):
         return full_response
             
     except requests.exceptions.Timeout as e:
-        logger.error(f"API timeout error: {e}")
-        return {"error": f"API Request Timeout: The server is taking too long to respond. This might be due to a complex query or server load."}
+        SecurityLogger.log_error("api_timeout", str(e))
+        return {"error": SecurityLogger.get_safe_error_message(e)}
     except requests.exceptions.RequestException as e:
-        logger.error(f"API request error: {e}")
-        return {"error": f"API Request Error: Unable to connect to the service. Please try again later."}
+        SecurityLogger.log_error("api_request_error", str(e))
+        return {"error": SecurityLogger.get_safe_error_message(e)}
     except ValueError as e:
-        logger.error(f"Response parsing error: {e}")
-        return {"error": f"Response Parsing Error: Invalid response from server."}
+        SecurityLogger.log_error("response_parsing_error", str(e))
+        return {"error": "Invalid response from server. Please try again."}
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        return {"error": f"An unexpected error occurred. Please try again."}
+        SecurityLogger.log_error("unexpected_error", str(e))
+        return {"error": "An unexpected error occurred. Please try again."}
 
 # Content for each page
 if st.session_state["page"] == "Home":
@@ -480,8 +514,24 @@ if st.session_state["debug_mode"]:
             st.write(f"- Connect timeout: {CONNECT_TIMEOUT}s")
             st.write(f"- Read timeout: {READ_TIMEOUT}s")
             st.write(f"- API Key configured: {'Yes' if API_KEY else 'No'}")
+            st.write(f"- Rate limit: {st.session_state['rate_limiter'].max_requests} requests/minute")
         else:
             st.error("❌ API configuration not loaded")
+        
+        # Show session info
+        st.write("**Session Info:**")
+        st.write(f"- Session token: {st.session_state.get('session_token', 'None')[:8]}...")
+        st.write(f"- Session timeout: {SessionManager.SESSION_TIMEOUT_MINUTES} minutes")
+        
+        # Show security logs in debug mode
+        if st.button("Show Security Logs"):
+            logs = st.session_state.get("security_logs", [])
+            if logs:
+                st.write("**Recent Security Events:**")
+                for log in logs[-10:]:  # Show last 10
+                    st.write(f"- {log['timestamp']}: {log['type']}")
+            else:
+                st.write("No security events logged")
         
         if st.session_state["page"] in API_ENDPOINTS:
             # Don't show the actual endpoint in production
