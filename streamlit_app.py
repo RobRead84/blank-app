@@ -350,10 +350,9 @@ def query_langflow_api(user_input, endpoint):
         "Connection": "keep-alive"
     }
     
-    # Add API key to headers if available
+    # Add Langflow API key to headers if available
     if API_KEY:
-        headers["X-API-Key"] = API_KEY
-        headers["Authorization"] = f"Bearer {API_KEY}"
+        headers["x-api-key"] = API_KEY  # Langflow uses lowercase 'x-api-key'
     
     try:
         # Make the request with explicit timeouts to prevent 504 errors
