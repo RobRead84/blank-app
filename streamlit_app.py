@@ -5,6 +5,8 @@ import re
 import pandas as pd
 from io import StringIO
 import logging
+import time
+import uuid
 from security_utils import InputValidator, RateLimiter, SessionManager, SecurityLogger
 
 # Set up logging
@@ -263,6 +265,146 @@ def render_table_from_lines(table_lines):
             st.write(f"🔧 Table rendering error: {e}")
         st.markdown('\n'.join(table_lines))
 
+# Helper functions for session testing and debugging
+def get_session_aware_payload(user_input, session_approach="comprehensive"):
+    """Generate session-aware payload for different LangFlow configurations"""
+    sanitized_input = InputValidator.sanitize_input(user_input)
+    session_id = st.session_state.get("session_id", "")
+    user_id = st.session_state.get("user_id", "")
+    
+    if session_approach == "simple":
+        return {
+            "input_value": sanitized_input,
+            "session_id": session_id
+        }
+    elif session_approach == "langchain":
+        return {
+            "input_value": sanitized_input,
+            "session_id": session_id,
+            "config": {
+                "configurable": {
+                    "session_id": session_id,
+                    "user_id": user_id
+                }
+            }
+        }
+    else:  # comprehensive (default)
+        return {
+            "input_value": sanitized_input,
+            "output_type": "chat",
+            "input_type": "chat",
+            "session_id": session_id,
+            "session_token": st.session_state.get("session_token", ""),
+            "user_id": user_id,
+            "client_id": session_id,
+            "conversation_id": session_id,
+            "session_metadata": {
+                "session_id": session_id,
+                "user_id": user_id,
+                "timestamp": time.time(),
+                "page": st.session_state.get("page", "Unknown")
+            }
+        }
+
+def test_session_isolation():
+    """Test function to verify that sessions are properly isolated"""
+    st.write("### 🧪 Session Isolation Test")
+    
+    current_session = st.session_state.get("session_id", "")
+    st.write(f"**Current Session ID:** `{current_session}`")
+    
+    if st.button("🔄 Generate New Session ID (Simulate New User)", key="new_session_test"):
+        # Force generate a new session ID to simulate a new user
+        old_session = st.session_state.get("session_id", "unknown")
+        SessionManager.clear_session()
+        new_session = st.session_state.get("session_id", "unknown")
+        
+        st.success(f"Session changed: `{old_session[:8]}...` → `{new_session[:8]}...`")
+        st.info("This simulates what happens when a new user visits your app. Each should get a completely separate conversation history.")
+    
+    # Show current session state
+    st.write("**Current Session State:**")
+    safe_session_info = {
+        "session_id": st.session_state.get("session_id", "")[:8] + "...",
+        "user_id": st.session_state.get("user_id", "")[:8] + "...",
+        "page": st.session_state.get("page", "Unknown"),
+        "messages_count": len(st.session_state.get("messages", {}).get(st.session_state.get("page", "Home"), []))
+    }
+    st.json(safe_session_info)
+
+def debug_session_transmission():
+    """Debug function to verify session IDs are being properly transmitted"""
+    st.write("### 🔍 Session ID Transmission Debug")
+    
+    # Current session info
+    session_info = SessionManager.get_session_info()
+    st.write("**Current Session Information:**")
+    for key, value in session_info.items():
+        st.write(f"- {key}: {value}")
+    
+    # Test payload that would be sent
+    session_token = st.session_state.get("session_token", "")
+    session_id = st.session_state.get("session_id", "")
+    user_id = st.session_state.get("user_id", "")
+    
+    test_payload = {
+        "input_value": "[TEST MESSAGE]",
+        "output_type": "chat",
+        "input_type": "chat",
+        "session_id": session_id,
+        "session_token": session_token,
+        "user_id": user_id,
+        "client_id": session_id,
+        "conversation_id": session_id,
+        "session_metadata": {
+            "session_id": session_id,
+            "user_id": user_id,
+            "session_token": session_token[:16] + "...",
+            "timestamp": time.time(),
+            "page": st.session_state.get("page", "Unknown")
+        }
+    }
+    
+    st.write("**Test Payload (what gets sent to LangFlow):**")
+    st.json(test_payload)
+    
+    # Test headers
+    test_headers = {
+        "Content-Type": "application/json",
+        "X-Session-ID": session_id,
+        "X-Session-Token": session_token[:16] + "..." if session_token else "",
+        "X-User-ID": user_id,
+        "X-Client-ID": session_id,
+        "X-Conversation-ID": session_id,
+        "X-Request-ID": str(uuid.uuid4()),
+        "X-Timestamp": str(int(time.time())),
+        "X-Page-Context": st.session_state.get("page", "Unknown")
+    }
+    
+    st.write("**Test Headers (what gets sent to LangFlow):**")
+    st.json(test_headers)
+    
+    # Recommendations
+    st.write("**🔧 LangFlow Configuration Recommendations:**")
+    st.info("""
+    **In your LangFlow application, you should configure it to:**
+    
+    1. **Check for session ID in multiple places:**
+       - `request.json.get('session_id')`
+       - `request.headers.get('X-Session-ID')`
+       - `request.json.get('session_metadata', {}).get('session_id')`
+    
+    2. **Use the session ID to:**
+       - Isolate conversation history per user
+       - Maintain separate memory/context per session
+       - Prevent data bleeding between users
+    
+    3. **Common LangFlow session patterns:**
+       - Set up a ConversationBufferWindowMemory with session_id
+       - Use session_id as a key for any persistent storage
+       - Configure your chat memory to use the session_id
+    """)
+
 # Sidebar for navigation
 with st.sidebar:
     # Display branded logo
@@ -320,57 +462,95 @@ def extract_message_from_response(response_data):
     except Exception as e:
         return f"Error extracting message: {str(e)}\nRaw response: {str(response_data)[:200]}..."
 
-# Function to query LangFlow API and return full response
+# ENHANCED Function to query LangFlow API with proper session handling
 def query_langflow_api(user_input, endpoint):
+    """
+    Enhanced API function with proper session ID handling for LangFlow
+    """
     # Check rate limiting
     if not st.session_state["rate_limiter"].is_allowed():
         wait_time = st.session_state["rate_limiter"].get_wait_time()
-        SecurityLogger.log_error("rate_limit_exceeded")
+        SecurityLogger.log_security_event("rate_limit_exceeded")
         return {"error": f"Too many requests. Please wait {wait_time} seconds before trying again."}
     
     # Validate input
     is_valid, error_msg = InputValidator.validate_input(user_input)
     if not is_valid:
-        SecurityLogger.log_error("input_validation_failed", error_msg)
+        SecurityLogger.log_security_event("input_validation_failed", error_msg)
         return {"error": error_msg}
     
     # Sanitize input
     sanitized_input = InputValidator.sanitize_input(user_input)
+    
+    # Get session identifiers
+    session_token = st.session_state.get("session_token", "")
+    session_id = st.session_state.get("session_id", "")
+    user_id = st.session_state.get("user_id", "")
+    
+    # LangFlow payload with multiple session ID approaches
     payload = {
-        "input_value": sanitized_input,  # Use sanitized input
-        "output_type": "chat",
+        "input_value": sanitized_input,
+        "output_type": "chat", 
         "input_type": "chat",
-        "session_token": st.session_state.get("session_token", "")  # Add session token
+        # Try multiple session field names (LangFlow might expect different field names)
+        "session_id": session_id,           # Primary session ID
+        "session_token": session_token,     # Full session token
+        "user_id": user_id,                 # User identifier
+        "client_id": session_id,            # Alternative field name
+        "conversation_id": session_id,      # Another common field name
+        # Additional session context
+        "session_metadata": {
+            "session_id": session_id,
+            "user_id": user_id,
+            "session_token": session_token[:16] + "...",  # Truncated for logging
+            "timestamp": time.time(),
+            "page": st.session_state.get("page", "Unknown")
+        }
     }
     
+    # Headers with session information
     headers = {
         "Content-Type": "application/json",
-        # Adding additional headers to ensure direct connection and prevent redirects
         "Host": "web-server-5a231649.fctl.app",
-        "Connection": "keep-alive"
+        "Connection": "keep-alive",
+        # Session ID in headers (multiple approaches)
+        "X-Session-ID": session_id,                    # Primary header
+        "X-Session-Token": session_token,              # Alternative header
+        "X-User-ID": user_id,                          # User ID header
+        "X-Client-ID": session_id,                     # Client ID header
+        "X-Conversation-ID": session_id,               # Conversation ID header
+        # Additional context headers
+        "X-Request-ID": str(uuid.uuid4()),             # Unique request ID
+        "X-Timestamp": str(int(time.time())),          # Request timestamp
+        "X-Page-Context": st.session_state.get("page", "Unknown")  # Current page
     }
     
-    # Add Langflow API key to headers if available
+    # Add API key if available
     if API_KEY:
-        headers["x-api-key"] = API_KEY  # Langflow uses lowercase 'x-api-key'
+        headers["x-api-key"] = API_KEY
+        headers["Authorization"] = f"Bearer {API_KEY}"  # Alternative auth format
+    
+    # Log the request details in debug mode
+    if st.session_state.get("debug_mode", False):
+        SecurityLogger.log_security_event("api_request_details", 
+            f"Session: {session_id}, User: {user_id}, Page: {st.session_state.get('page')}")
     
     try:
-        # Make the request with explicit timeouts to prevent 504 errors
+        # Make the request with session information
         response = requests.post(
-            endpoint, 
-            json=payload, 
-            headers=headers, 
-            timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),  # (connect timeout, read timeout)
-            allow_redirects=False  # Try to prevent redirects to CloudFront
+            endpoint,
+            json=payload,
+            headers=headers,
+            timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
+            allow_redirects=False
         )
         
-        # Check for redirect - if redirected, we'll use the direct URL we want
+        # Handle redirects
         if response.status_code in (301, 302, 303, 307, 308):
-            # Get the real URL from our mapping - use the original endpoint
             response = requests.post(
-                endpoint, 
-                json=payload, 
-                headers=headers, 
+                endpoint,
+                json=payload,
+                headers=headers,
                 timeout=(CONNECT_TIMEOUT, READ_TIMEOUT)
             )
         
@@ -379,22 +559,26 @@ def query_langflow_api(user_input, endpoint):
         # Get the full response
         full_response = response.json()
         
+        # Log successful API call
+        SecurityLogger.log_security_event("api_call_success", 
+            f"Session: {session_id}, Status: {response.status_code}")
+        
         if "error" in full_response:
             return {"error": full_response["error"]}
         
         return full_response
             
     except requests.exceptions.Timeout as e:
-        SecurityLogger.log_error("api_timeout", str(e))
+        SecurityLogger.log_security_event("api_timeout", f"Session: {session_id}, Error: {str(e)[:50]}", "ERROR")
         return {"error": SecurityLogger.get_safe_error_message(e)}
     except requests.exceptions.RequestException as e:
-        SecurityLogger.log_error("api_request_error", str(e))
+        SecurityLogger.log_security_event("api_request_error", f"Session: {session_id}, Error: {str(e)[:50]}", "ERROR")
         return {"error": SecurityLogger.get_safe_error_message(e)}
     except ValueError as e:
-        SecurityLogger.log_error("response_parsing_error", str(e))
+        SecurityLogger.log_security_event("response_parsing_error", f"Session: {session_id}, Error: {str(e)[:50]}", "ERROR")
         return {"error": "Invalid response from server. Please try again."}
     except Exception as e:
-        SecurityLogger.log_error("unexpected_error", str(e))
+        SecurityLogger.log_security_event("unexpected_error", f"Session: {session_id}, Error: {str(e)[:50]}", "ERROR")
         return {"error": "An unexpected error occurred. Please try again."}
 
 # Content for each page
@@ -497,16 +681,44 @@ else:  # For all chat pages, use the same template with different endpoints
             st.session_state["processing"] = False
             st.rerun()
 
-# Add debug section only if debug mode is enabled
+# ENHANCED DEBUG SECTION with session management capabilities
 if st.session_state["debug_mode"]:
     with st.expander("Debug Information (Expand to see)"):
+        # Existing debug info
         st.write("Current Page:", st.session_state["page"])
         st.write("Session State Keys:", list(st.session_state.keys()))
         st.write("Messages Per Page:", {page: len(messages) for page, messages in st.session_state["messages"].items()})
         st.write("Processing Flag:", st.session_state.get("processing", False))
         
+        # Enhanced Session Debug Section
+        st.write("---")
+        st.write("### 🔐 Session Management Debug")
+        
+        # Current session information
+        session_info = SessionManager.get_session_info()
+        st.write("**Session Information:**")
+        for key, value in session_info.items():
+            st.write(f"- {key}: {value}")
+        
+        # Session IDs that will be sent to LangFlow
+        st.write("**Session IDs sent to LangFlow:**")
+        st.write(f"- session_id: `{st.session_state.get('session_id', 'Not set')}`")
+        st.write(f"- user_id: `{st.session_state.get('user_id', 'Not set')}`")
+        st.write(f"- session_token: `{st.session_state.get('session_token', 'Not set')[:16]}...`")
+        
+        # Test session isolation
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🧪 Test Session Isolation"):
+                test_session_isolation()
+        
+        with col2:
+            if st.button("🔍 Debug Session Transmission"):
+                debug_session_transmission()
+        
         # Show configuration status
-        st.write("**Configuration Status:**")
+        st.write("---")
+        st.write("### ⚙️ Configuration Status")
         if api_config:
             st.success("✅ API configuration loaded successfully")
             st.write(f"- Endpoints configured: {len(API_ENDPOINTS)}")
@@ -517,28 +729,35 @@ if st.session_state["debug_mode"]:
         else:
             st.error("❌ API configuration not loaded")
         
-        # Show session info
-        st.write("**Session Info:**")
-        st.write(f"- Session token: {st.session_state.get('session_token', 'None')[:8]}...")
-        st.write(f"- Session timeout: {SessionManager.SESSION_TIMEOUT_MINUTES} minutes")
+        # Enhanced Security Logs
+        st.write("---")
+        st.write("### 🛡️ Security Events")
         
-        # Show security logs in debug mode
-        if st.button("Show Security Logs"):
+        if st.button("Show Security Summary"):
+            summary = SecurityLogger.get_security_summary()
+            st.write("**Security Summary:**")
+            st.json(summary)
+        
+        if st.button("Show Recent Security Logs"):
             logs = st.session_state.get("security_logs", [])
             if logs:
                 st.write("**Recent Security Events:**")
                 for log in logs[-10:]:  # Show last 10
-                    st.write(f"- {log['timestamp']}: {log['type']}")
+                    severity_emoji = {"INFO": "ℹ️", "WARNING": "⚠️", "ERROR": "❌"}.get(log.get("severity", "INFO"), "ℹ️")
+                    st.write(f"{severity_emoji} {log['timestamp']}: {log['type']} ({log.get('severity', 'INFO')})")
+                    if st.session_state.get("debug_mode") and log.get("details"):
+                        st.write(f"   Details: {log['details']}")
             else:
                 st.write("No security events logged")
         
-        if st.session_state["page"] in API_ENDPOINTS:
-            # Don't show the actual endpoint in production
-            st.write(f"Current endpoint configured: Yes")
+        # API Connection Testing
+        st.write("---")
+        st.write("### 🌐 API Connection Testing")
         
-        # Add network troubleshooting button
-        if st.button("Test API Connection"):
-            if st.session_state["page"] in API_ENDPOINTS:
+        if st.session_state["page"] in API_ENDPOINTS:
+            st.write(f"Current endpoint configured: ✅ Yes")
+            
+            if st.button("Test API Connection"):
                 endpoint = API_ENDPOINTS[st.session_state["page"]]
                 st.write(f"Testing connection to API...")
                 try:
@@ -554,10 +773,40 @@ if st.session_state["debug_mode"]:
                         st.warning(f"Unexpected status code: {test_response.status_code}")
                 except Exception as e:
                     st.error(f"Connection test failed: {str(e)}")
-            else:
-                st.warning("No endpoint configured for current page")
+            
+            # Test actual API call with session info
+            if st.button("🧪 Test API Call with Session Info"):
+                st.write("Testing actual API call with current session information...")
+                
+                # Show what would be sent
+                test_payload = get_session_aware_payload("Test message from debug", "comprehensive")
+                st.write("**Payload that would be sent:**")
+                st.json(test_payload)
+                
+                # Show headers
+                session_id = st.session_state.get("session_id", "")
+                session_token = st.session_state.get("session_token", "")
+                user_id = st.session_state.get("user_id", "")
+                
+                test_headers = {
+                    "Content-Type": "application/json",
+                    "X-Session-ID": session_id,
+                    "X-User-ID": user_id,
+                    "X-Session-Token": session_token[:16] + "..." if session_token else "",
+                    "X-Page-Context": st.session_state.get("page", "Unknown")
+                }
+                
+                st.write("**Headers that would be sent:**")
+                st.json(test_headers)
+                
+                st.info("💡 **Check your LangFlow logs** to see if these session identifiers are being received correctly.")
+        else:
+            st.warning("No endpoint configured for current page")
         
-        # Add table parsing test button
+        # Table Parsing Test
+        st.write("---")
+        st.write("### 📊 Table Parsing Test")
+        
         if st.button("Test Table Parsing", key="test_table_parsing"):
             st.write("**Testing table parsing with sample data:**")
             test_table = """Here's some text before the table.
@@ -575,12 +824,14 @@ And here's some text after the table."""
             st.write("**Rendered output:**")
             display_message_with_tables(test_table)
         
-        # Add version and environment info
-        st.write("**Environment Information:**")
+        # Environment Information
+        st.write("---")
+        st.write("### 🖥️ Environment Information")
         st.write(f"Streamlit version: {st.__version__}")
         st.write(f"Pandas version: {pd.__version__}")
+        st.write(f"Requests version: {requests.__version__}")
         
-        # Test actual API response format
+        # Last API Response Debug
         if st.button("Debug Last API Response", key="debug_api_response"):
             if st.session_state["messages"][st.session_state["page"]]:
                 last_assistant_msg = None
